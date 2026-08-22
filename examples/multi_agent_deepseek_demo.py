@@ -10,10 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
-from meltingpot.utils.env import load_env_file
-from meltingpot.utils.llm import DeepSeekClient
-from meltingpot.utils.multi_agent import MultiAgentBuilder
-from meltingpot.utils.multi_agent import RuntimeConfig
+from stegopot.utils.env import load_env_file
+from stegopot.utils.llm import DeepSeekClient
+from stegopot.utils.multi_agent import MultiAgentBuilder
+from stegopot.utils.multi_agent import RuntimeConfig
 
 def create_client() -> DeepSeekClient:
   """为一个节点创建独立的 DeepSeek 客户端。"""
@@ -29,7 +29,7 @@ def create_client() -> DeepSeekClient:
   )
 
 
-def build_runtime():
+def  build_runtime():
   """构建 planner -> writer <-> reviewer 的 DeepSeek 运行器。"""
   builder = MultiAgentBuilder()
   builder.add_llm_node(

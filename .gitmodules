@@ -1,0 +1,3 @@
+[submodule "stegopot/tools/stego-kit"]
+	path = stegopot/tools/stego-kit
+	url = https://github.com/Dwinovo/stego-kit.git

@@ -16,11 +16,11 @@ import unittest
 from unittest import mock
 import urllib.error
 
-from meltingpot.utils.env import load_env_file
-from meltingpot.utils.llm import DeepSeekClient
-from meltingpot.utils.llm import JsonActionParser
-from meltingpot.utils.llm import LLMMessage
-from meltingpot.utils.policies import LLMPolicy
+from stegopot.utils.env import load_env_file
+from stegopot.utils.llm import DeepSeekClient
+from stegopot.utils.llm import JsonActionParser
+from stegopot.utils.llm import LLMMessage
+from stegopot.utils.policies import LLMPolicy
 
 
 class DeepSeekRequestTest(unittest.TestCase):
@@ -130,7 +130,7 @@ class DeepSeekRequestTest(unittest.TestCase):
     self.assertEqual(response.metadata["model"], "deepseek-test-model")
     self.assertEqual(response.metadata["usage"]["total_tokens"], 15)
 
-  @mock.patch("meltingpot.utils.llm.deepseek_client.urllib.request.urlopen")
+  @mock.patch("stegopot.utils.llm.deepseek_client.urllib.request.urlopen")
   def test_generate_retries_temporary_network_error(self, urlopen) -> None:
     """验证临时连接错误会重试，并在后续成功时返回响应。"""
     response = mock.MagicMock()

@@ -5,16 +5,16 @@ from __future__ import annotations
 import json
 import unittest
 
-from meltingpot.utils.llm import MockLLMClient
-from meltingpot.utils.multi_agent import AgentNode
-from meltingpot.utils.multi_agent import AgentTopology
-from meltingpot.utils.multi_agent import MessageRouter
-from meltingpot.utils.multi_agent import MessageRoutingError
-from meltingpot.utils.multi_agent import MultiAgentBuilder
-from meltingpot.utils.multi_agent import MultiAgentRuntime
-from meltingpot.utils.multi_agent import RuntimeConfig
-from meltingpot.utils.policies import AgentAction
-from meltingpot.utils.policies import Policy
+from stegopot.utils.llm import MockLLMClient
+from stegopot.utils.multi_agent import AgentNode
+from stegopot.utils.multi_agent import AgentTopology
+from stegopot.utils.multi_agent import MessageRouter
+from stegopot.utils.multi_agent import MessageRoutingError
+from stegopot.utils.multi_agent import MultiAgentBuilder
+from stegopot.utils.multi_agent import MultiAgentRuntime
+from stegopot.utils.multi_agent import RuntimeConfig
+from stegopot.utils.policies import AgentAction
+from stegopot.utils.policies import Policy
 
 
 class ScriptedPolicy(Policy[int]):
