@@ -1,10 +1,16 @@
-# StegoPot
+<p align="center">
+  <img src="assets/stegopot-icon.png" alt="StegoPot 项目图标" width="190">
+</p>
 
-面向多智能体通信与生成式文本隐写研究的轻量实验框架。
+<h1 align="center">StegoPot</h1>
 
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-2F855A)](https://github.com/Xinyuan20061/stegopot-multi-agent)
-[![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-D22128)](LICENSE)
+<p align="center">面向多智能体通信与生成式文本隐写研究的轻量实验框架。</p>
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.11+"></a>
+  <a href="https://github.com/Xinyuan20061/stegopot"><img src="https://img.shields.io/badge/version-0.4.0-2F855A" alt="Version 0.4.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-D22128" alt="Apache License 2.0"></a>
+</p>
 
 StegoPot 将智能体身份、决策策略、通信拓扑、运行调度、环境规则和隐写
 工具拆分为独立组件。研究者可以先用可预测的离线模型验证多智能体流程，
@@ -108,6 +114,8 @@ flowchart LR
 
 ```text
 .
+├── assets/
+│   └── stegopot-icon.png                  # 项目图标
 ├── examples/
 │   ├── multi_agent_mock_demo.py           # 离线三节点协作
 │   ├── deepseek_reply_test.py              # 单次 DeepSeek 回复
