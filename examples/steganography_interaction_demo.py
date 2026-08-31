@@ -16,12 +16,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import torch
 
-from stegopot.utils.multi_agent import MultiAgentBuilder
-from stegopot.utils.multi_agent import RuntimeConfig
-from stegopot.utils.policies import AgentAction
-from stegopot.utils.policies import Policy
-from stegopot.utils.substrates import SteganographySubstrate
-from stegopot.utils.substrates import StegoKitAdapter
+from stegopot.bootstrap import MultiAgentBuilder
+from stegopot.application.engine import RuntimeConfig
+from stegopot.domain.model import AgentAction
+from stegopot.infrastructure.integrations.stegokit import StegoKitAdapter
+from stegopot.domain.interface import Policy
+from stegopot.infrastructure.substrates.stego import SteganographySubstrate
 
 
 @dataclasses.dataclass(frozen=True)

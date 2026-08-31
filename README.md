@@ -3,7 +3,7 @@
 面向多智能体通信与生成式文本隐写研究的轻量实验框架。
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-2F855A)](https://github.com/Xinyuan20061/stegopot-multi-agent)
+[![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-2F855A)](https://github.com/Xinyuan20061/stegopot-multi-agent)
 [![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-D22128)](LICENSE)
 
 StegoPot 将智能体身份、决策策略、通信拓扑、运行调度、环境规则和隐写
@@ -40,11 +40,28 @@ StegoPot 将智能体身份、决策策略、通信拓扑、运行调度、环�
 | 隐写检测与攻防评估 | 尚未实现 | 当前没有检测器、统计指标、对抗训练或基准实验 |
 | 分布式执行与可视化界面 | 尚未实现 | 当前运行器为单进程同步调度，主要通过 Python API 使用 |
 
-`configs/` 与 `utils/scenarios/` 目前保留为后续实验配置和场景注册入口；
-当前可运行流程以 `MultiAgentBuilder`、`MultiAgentRuntime` 和
-`Substrate` 为主。
+项目采用强制单向依赖的分层结构。完整目录职责、允许依赖、Runtime
+时序和隐写调用链见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 架构
+
+### 层级依赖
+
+```mermaid
+flowchart TB
+    X[examples / tests] --> BOOT[bootstrap · L3]
+    X --> INF[infrastructure · L2]
+    BOOT --> APP[application · L1]
+    BOOT --> INF
+    APP --> DOM[domain · L0]
+    INF --> DOM
+```
+
+包根目录只保留四个逻辑层。依赖只能沿箭头方向流动：`domain` 保存模型和
+抽象接口，`application` 保存运行引擎，`infrastructure` 提供具体实现，
+`bootstrap` 负责选择并组装这些实现。
+
+### 运行调用链
 
 ```mermaid
 flowchart LR
@@ -63,17 +80,15 @@ flowchart LR
 
 ### 组件职责
 
-| 组件 | 职责 | 不负责 |
+| 组件 | 所在层 | 职责 |
 | --- | --- | --- |
-| `AgentNode` | 封装节点 ID、角色、策略和单次运行状态 | 不实现具体推理 |
-| `Policy` | 将局部观察转换为动作和下一状态 | 不处理拓扑或消息投递 |
-| `LLMClient` | 调用模型供应商并返回统一响应 | 不解释多智能体动作 |
-| `AgentTopology` | 保存节点和有向通信边 | 不保存消息或运行状态 |
-| `MessageRouter` | 校验目标并把动作展开为消息 | 不修改消息语义 |
-| `MultiAgentRuntime` | 组织同步轮次、终止条件和完整记录 | 不包含具体环境规则 |
-| `Substrate` | 处理环境状态、消息、奖励、事件和局部可见性 | 不决定智能体策略 |
-| `StegoTool` | 定义统一的隐写编码与解码协议 | 不依赖具体运行器 |
-| `StegoKitAdapter` | 将统一协议映射到 StegoKit Dispatcher | 不向 Agent 暴露第三方类型 |
+| `AgentAction` / `AgentMessage` / `AgentTopology` | `domain/model` | 稳定领域数据与拓扑规则 |
+| `Policy` / `LLMClient` / `Substrate` / `StegoTool` | `domain/interface` | 可替换组件的抽象契约 |
+| `AgentNode` / `MessageRouter` / `MultiAgentRuntime` | `application/engine` | 节点状态、路由和同步调度 |
+| `LLMPolicy` / `DeepSeekClient` | `infrastructure/llm` | LLM 决策与供应商客户端实现 |
+| `CommunicationSubstrate` / `SteganographySubstrate` | `infrastructure/substrates` | 具体环境规则 |
+| `StegoKitAdapter` | `infrastructure/integrations` | 将 StegoTool 契约映射到第三方工具 |
+| `MultiAgentBuilder` | `bootstrap` | 组合策略、运行引擎与环境 |
 
 这种边界允许单独替换模型供应商、节点策略、拓扑或隐写算法，而无需修改
 运行器的其他部分。
@@ -99,17 +114,25 @@ flowchart LR
 │   ├── multi_agent_deepseek_demo.py        # DeepSeek 三节点协作
 │   └── steganography_interaction_demo.py   # StegoKit 隐写交互
 ├── stegopot/
-│   ├── configs/                            # 预留的配置注册入口
-│   ├── tools/
-│   │   ├── stegokit_loader.py              # StegoKit 按需加载器
-│   │   └── stego-kit/                      # 上游 Git 子模块
-│   └── utils/
-│       ├── llm/                            # LLM 客户端、提示词和动作解析
-│       ├── multi_agent/                    # 节点、拓扑、路由和运行器
-│       ├── policies/                       # Policy 抽象与 LLMPolicy
-│       ├── scenarios/                      # 预留的场景与群体抽象
-│       └── substrates/                     # 通信环境与隐写环境
-├── tests/                                  # 单元测试与集成测试
+│   ├── domain/                             # L0：稳定内核
+│   │   ├── model/                          # 领域模型与规则
+│   │   └── interface/                      # ABC、Protocol 与稳定契约
+│   ├── application/                        # L1：框架运行与应用服务
+│   │   ├── engine/                         # 节点、路由、观察和 Runtime
+│   │   └── services/                       # 完整应用用例
+│   ├── infrastructure/                     # L2：具体实现与技术细节
+│   │   ├── llm/                            # LLM 策略与客户端
+│   │   ├── substrates/
+│   │   │   └── stego/                      # 隐写环境功能目录
+│   │   ├── integrations/
+│   │   │   └── stegokit/                   # StegoKit 适配器和加载器
+│   │   ├── settings/                       # .env 配置读取
+│   │   └── vendor/
+│   │       └── stego-kit/                  # 上游 Git 子模块
+│   └── bootstrap/                          # L3：Builder 与对象组装
+├── tests/                                  # 行为与架构测试
+├── ARCHITECTURE.md                         # 分层和调用关系规范
+├── AGENTS.md                               # 后续代码开发约束
 ├── .env.example                            # 环境变量模板
 ├── .gitmodules                             # StegoKit 子模块声明
 └── pyproject.toml                          # 包元数据与依赖
@@ -238,8 +261,9 @@ DeepSeek，也不下载模型。控制台将展示：
 ### 构建自定义拓扑
 
 ```python
-from stegopot.utils.llm import DeepSeekClient
-from stegopot.utils.multi_agent import MultiAgentBuilder, RuntimeConfig
+from stegopot.application.engine import RuntimeConfig
+from stegopot.bootstrap import MultiAgentBuilder
+from stegopot.infrastructure.llm import DeepSeekClient
 
 client = DeepSeekClient(env_file=".env")
 builder = MultiAgentBuilder()
@@ -287,7 +311,7 @@ print(result.to_dict())
 也可以直接使用预定义拓扑：
 
 ```python
-from stegopot.utils.multi_agent import AgentTopology
+from stegopot.domain.model import AgentTopology
 
 ring = AgentTopology.ring(["a", "b", "c"])
 star = AgentTopology.star("center", ["a", "b", "c"])
@@ -326,10 +350,8 @@ StegoKitAdapter -> 根据本地模型概率生成载密文本并恢复秘密比�
 创建环境：
 
 ```python
-from stegopot.utils.substrates import (
-    SteganographySubstrate,
-    StegoKitAdapter,
-)
+from stegopot.infrastructure.integrations.stegokit import StegoKitAdapter
+from stegopot.infrastructure.substrates.stego import SteganographySubstrate
 
 stego_tool = StegoKitAdapter(
     model=local_causal_lm,
@@ -349,7 +371,7 @@ runtime = builder.build(
 发送节点通过 `AgentAction.metadata["stego"]` 提交与工具解耦的隐写请求：
 
 ```python
-from stegopot.utils.policies import AgentAction
+from stegopot.domain.model import AgentAction
 
 action = AgentAction.message(
     "生成一条公开状态消息。",
@@ -434,7 +456,7 @@ $env:RUN_DEEPSEEK_LIVE_TEST = "1"
 ```
 
 测试范围包括拓扑与路由、同步调度、终止规则、异常处理、Substrate 生命周期、
-隐写数据隔离、StegoKit AC 往返恢复和 DeepSeek 请求构造。
+隐写数据隔离、StegoKit AC 往返恢复、DeepSeek 请求构造和分层依赖边界。
 
 ## 扩展方向
 
@@ -450,7 +472,7 @@ $env:RUN_DEEPSEEK_LIVE_TEST = "1"
 ## 来源与许可
 
 - StegoPot 根项目使用 [Apache License 2.0](LICENSE)。
-- `stegopot/tools/stego-kit` 是
+- `stegopot/infrastructure/vendor/stego-kit` 是
   [Dwinovo/StegoKit](https://github.com/Dwinovo/stego-kit) Git 子模块，
   遵循其独立的 MIT License。
 - 项目的早期分层参考了

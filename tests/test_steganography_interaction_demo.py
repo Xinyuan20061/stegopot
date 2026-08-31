@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
-from stegopot.tools import bundled_stegokit_path
+from stegopot.infrastructure.integrations.stegokit import bundled_stegokit_path
 
 
 _HAS_STEGO_DEPENDENCIES = all(

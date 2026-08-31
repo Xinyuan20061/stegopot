@@ -5,16 +5,17 @@ from __future__ import annotations
 import json
 import unittest
 
-from stegopot.utils.llm import MockLLMClient
-from stegopot.utils.multi_agent import AgentNode
-from stegopot.utils.multi_agent import AgentTopology
-from stegopot.utils.multi_agent import MessageRouter
-from stegopot.utils.multi_agent import MessageRoutingError
-from stegopot.utils.multi_agent import MultiAgentBuilder
-from stegopot.utils.multi_agent import MultiAgentRuntime
-from stegopot.utils.multi_agent import RuntimeConfig
-from stegopot.utils.policies import AgentAction
-from stegopot.utils.policies import Policy
+from stegopot.bootstrap import MultiAgentBuilder
+from stegopot.application.engine import AgentNode
+from stegopot.application.engine import MessageRouter
+from stegopot.application.engine import MessageRoutingError
+from stegopot.application.engine import MultiAgentRuntime
+from stegopot.application.engine import RuntimeConfig
+from stegopot.domain.model import AgentAction
+from stegopot.domain.model import AgentTopology
+from stegopot.domain.interface import Policy
+from stegopot.infrastructure.llm import MockLLMClient
+from stegopot.infrastructure.substrates import CommunicationSubstrate
 
 
 class ScriptedPolicy(Policy[int]):
@@ -124,6 +125,7 @@ class MultiAgentRuntimeTest(unittest.TestCase):
         },
         topology=topology,
         config=RuntimeConfig(max_rounds=3, termination_mode="all_final"),
+        substrate=CommunicationSubstrate(),
     )
 
     result = runtime.run("测试同步投递")
@@ -152,6 +154,7 @@ class MultiAgentRuntimeTest(unittest.TestCase):
             termination_mode="max_rounds",
             strict_routing=False,
         ),
+        substrate=CommunicationSubstrate(),
     )
 
     result = runtime.run("测试非法路由")
@@ -171,6 +174,7 @@ class MultiAgentRuntimeTest(unittest.TestCase):
         },
         topology=topology,
         config=RuntimeConfig(max_rounds=1, termination_mode="any_final"),
+        substrate=CommunicationSubstrate(),
     )
 
     result = runtime.run("测试序列化", shared_context={"value": 1})

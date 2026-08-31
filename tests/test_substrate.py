@@ -8,25 +8,25 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from stegopot.tools import bundled_stegokit_path
-from stegopot.utils.multi_agent import AgentMessage
-from stegopot.utils.multi_agent import AgentNode
-from stegopot.utils.multi_agent import AgentTopology
-from stegopot.utils.multi_agent import MessageRouter
-from stegopot.utils.multi_agent import MultiAgentRuntime
-from stegopot.utils.multi_agent import RuntimeConfig
-from stegopot.utils.policies import AgentAction
-from stegopot.utils.policies import Policy
-from stegopot.utils.substrates import CommunicationSubstrate
-from stegopot.utils.substrates import SteganographySubstrate
-from stegopot.utils.substrates import StegoEmbedRequest
-from stegopot.utils.substrates import StegoEmbedResult
-from stegopot.utils.substrates import StegoExtractRequest
-from stegopot.utils.substrates import StegoExtractResult
-from stegopot.utils.substrates import StegoGenerationConfig
-from stegopot.utils.substrates import StegoKitAdapter
-from stegopot.utils.substrates import SubstrateResetContext
-from stegopot.utils.substrates import SubstrateStepContext
+from stegopot.application.engine import AgentNode
+from stegopot.application.engine import MessageRouter
+from stegopot.application.engine import MultiAgentRuntime
+from stegopot.application.engine import RuntimeConfig
+from stegopot.domain.model import AgentAction
+from stegopot.domain.model import AgentMessage
+from stegopot.domain.model import AgentTopology
+from stegopot.infrastructure.integrations.stegokit import StegoKitAdapter
+from stegopot.infrastructure.integrations.stegokit import bundled_stegokit_path
+from stegopot.domain.interface import Policy
+from stegopot.domain.interface import StegoEmbedRequest
+from stegopot.domain.interface import StegoEmbedResult
+from stegopot.domain.interface import StegoExtractRequest
+from stegopot.domain.interface import StegoExtractResult
+from stegopot.domain.interface import StegoGenerationConfig
+from stegopot.domain.interface import SubstrateResetContext
+from stegopot.domain.interface import SubstrateStepContext
+from stegopot.infrastructure.substrates import CommunicationSubstrate
+from stegopot.infrastructure.substrates.stego import SteganographySubstrate
 
 
 class RecordingPolicy(Policy[int]):
@@ -351,7 +351,7 @@ class FakeDispatcher:
 class StegoKitAdapterTest(unittest.TestCase):
   """本项目请求到 StegoKit 官方便利接口的映射测试。"""
 
-  @mock.patch("stegopot.utils.substrates.stego_adapter.load_stegokit")
+  @mock.patch("stegopot.infrastructure.integrations.stegokit.adapter.load_stegokit")
   def test_adapter_creates_dispatcher_from_bundled_tool(
       self,
       load_stegokit_mock: mock.Mock,

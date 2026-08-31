@@ -1,6 +1,5 @@
-"""裁剪后的多智能体实验骨架。"""
+"""分层的多智能体通信与生成式隐写实验框架。"""
 
-from stegopot import scenario
-from stegopot import substrate
+__version__ = "0.4.0"
 
-__all__ = ["scenario", "substrate"]
+__all__ = ["__version__"]

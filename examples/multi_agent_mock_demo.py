@@ -10,9 +10,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
-from stegopot.utils.llm import MockLLMClient
-from stegopot.utils.multi_agent import MultiAgentBuilder
-from stegopot.utils.multi_agent import RuntimeConfig
+from stegopot.bootstrap import MultiAgentBuilder
+from stegopot.application.engine import RuntimeConfig
+from stegopot.infrastructure.llm import MockLLMClient
 
 
 def build_runtime():

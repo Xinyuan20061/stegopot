@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stegopot"
-version = "0.3.0"
+version = "0.4.0"
 description = "支持自定义拓扑、LLM 节点和隐写环境的多智能体实验框架。"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,7 +21,7 @@ stego = [
 
 [tool.setuptools.packages.find]
 include = ["stegopot", "stegopot.*"]
-exclude = ["stegopot.tools.stego-kit*"]
+exclude = ["stegopot.infrastructure.vendor.stego-kit*"]
 
 [tool.pytest.ini_options]
 testpaths = ["stegopot", "tests"]
