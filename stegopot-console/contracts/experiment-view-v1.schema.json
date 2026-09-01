@@ -1,0 +1,708 @@
+{
+  "$defs": {
+    "ActionView": {
+      "additionalProperties": false,
+      "description": "已移除私密元数据的节点动作。",
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        }
+      },
+      "required": [
+        "node_id",
+        "kind"
+      ],
+      "title": "ActionView",
+      "type": "object"
+    },
+    "DetectionMetricsView": {
+      "additionalProperties": false,
+      "description": "检测任务的核心评估指标。",
+      "properties": {
+        "accuracy": {
+          "title": "Accuracy",
+          "type": "number"
+        },
+        "average_detection_ms": {
+          "title": "Average Detection Ms",
+          "type": "number"
+        },
+        "f1": {
+          "title": "F1",
+          "type": "number"
+        },
+        "failed": {
+          "title": "Failed",
+          "type": "integer"
+        },
+        "false_negative_rate": {
+          "title": "False Negative Rate",
+          "type": "number"
+        },
+        "false_positive_rate": {
+          "title": "False Positive Rate",
+          "type": "number"
+        },
+        "inspected_messages": {
+          "title": "Inspected Messages",
+          "type": "integer"
+        },
+        "precision": {
+          "title": "Precision",
+          "type": "number"
+        },
+        "recall": {
+          "title": "Recall",
+          "type": "number"
+        }
+      },
+      "required": [
+        "precision",
+        "recall",
+        "f1",
+        "accuracy",
+        "false_positive_rate",
+        "false_negative_rate",
+        "inspected_messages",
+        "failed",
+        "average_detection_ms"
+      ],
+      "title": "DetectionMetricsView",
+      "type": "object"
+    },
+    "DetectionView": {
+      "additionalProperties": false,
+      "description": "针对一条公开消息的检测结论。",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "detector_id": {
+          "title": "Detector Id",
+          "type": "string"
+        },
+        "elapsed_ms": {
+          "title": "Elapsed Ms",
+          "type": "number"
+        },
+        "is_suspicious": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Suspicious"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "verdict": {
+          "enum": [
+            "suspicious",
+            "clear",
+            "error"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "detector_id",
+        "verdict",
+        "reason",
+        "elapsed_ms"
+      ],
+      "title": "DetectionView",
+      "type": "object"
+    },
+    "EdgeView": {
+      "additionalProperties": false,
+      "description": "拓扑中的有向通信边。",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target"
+      ],
+      "title": "EdgeView",
+      "type": "object"
+    },
+    "MessageView": {
+      "additionalProperties": false,
+      "description": "前端能够展示的一条公开消息。",
+      "properties": {
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "detection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DetectionView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "recipient": {
+          "title": "Recipient",
+          "type": "string"
+        },
+        "round_index": {
+          "title": "Round Index",
+          "type": "integer"
+        },
+        "sender": {
+          "title": "Sender",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "round_index",
+        "sender",
+        "recipient",
+        "content"
+      ],
+      "title": "MessageView",
+      "type": "object"
+    },
+    "MetricsView": {
+      "additionalProperties": false,
+      "description": "检测与隐写指标集合。",
+      "properties": {
+        "detection": {
+          "$ref": "#/$defs/DetectionMetricsView"
+        },
+        "steganography": {
+          "$ref": "#/$defs/SteganographyMetricsView"
+        }
+      },
+      "required": [
+        "detection",
+        "steganography"
+      ],
+      "title": "MetricsView",
+      "type": "object"
+    },
+    "NodeView": {
+      "additionalProperties": false,
+      "description": "拓扑中的可视化节点。",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "received_count": {
+          "default": 0,
+          "title": "Received Count",
+          "type": "integer"
+        },
+        "reward": {
+          "default": 0.0,
+          "title": "Reward",
+          "type": "number"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "sent_count": {
+          "default": 0,
+          "title": "Sent Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "role"
+      ],
+      "title": "NodeView",
+      "type": "object"
+    },
+    "ResearchTraceView": {
+      "additionalProperties": false,
+      "description": "仅研究视图返回的单条消息真实轨迹。",
+      "properties": {
+        "algorithm": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Algorithm"
+        },
+        "complete_recovery": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Complete Recovery"
+        },
+        "consumed_bit_count": {
+          "default": 0,
+          "title": "Consumed Bit Count",
+          "type": "integer"
+        },
+        "decoded_bits": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decoded Bits"
+        },
+        "is_stego": {
+          "title": "Is Stego",
+          "type": "boolean"
+        },
+        "matching_bit_count": {
+          "default": 0,
+          "title": "Matching Bit Count",
+          "type": "integer"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        },
+        "requested_bit_count": {
+          "default": 0,
+          "title": "Requested Bit Count",
+          "type": "integer"
+        },
+        "secret_bits": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secret Bits"
+        }
+      },
+      "required": [
+        "message_id",
+        "is_stego"
+      ],
+      "title": "ResearchTraceView",
+      "type": "object"
+    },
+    "ResearchView": {
+      "additionalProperties": false,
+      "description": "与公开视图物理分离的研究真值集合。",
+      "properties": {
+        "traces": {
+          "items": {
+            "$ref": "#/$defs/ResearchTraceView"
+          },
+          "title": "Traces",
+          "type": "array"
+        }
+      },
+      "required": [
+        "traces"
+      ],
+      "title": "ResearchView",
+      "type": "object"
+    },
+    "RoundView": {
+      "additionalProperties": false,
+      "description": "单个同步轮次的公开摘要。",
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/ActionView"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "event_count": {
+          "title": "Event Count",
+          "type": "integer"
+        },
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "message_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Message Ids",
+          "type": "array"
+        },
+        "routing_errors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Routing Errors",
+          "type": "array"
+        }
+      },
+      "required": [
+        "index",
+        "actions",
+        "message_ids",
+        "event_count"
+      ],
+      "title": "RoundView",
+      "type": "object"
+    },
+    "RunView": {
+      "additionalProperties": false,
+      "description": "一次实验运行的基础信息。",
+      "properties": {
+        "completed_rounds": {
+          "title": "Completed Rounds",
+          "type": "integer"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "string"
+        },
+        "detection_count": {
+          "title": "Detection Count",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "message_count": {
+          "title": "Message Count",
+          "type": "integer"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "status": {
+          "const": "completed",
+          "default": "completed",
+          "title": "Status",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "task": {
+          "title": "Task",
+          "type": "string"
+        },
+        "termination_reason": {
+          "title": "Termination Reason",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "created_at",
+        "task",
+        "seed",
+        "completed_rounds",
+        "termination_reason",
+        "message_count",
+        "detection_count"
+      ],
+      "title": "RunView",
+      "type": "object"
+    },
+    "SteganographyMetricsView": {
+      "additionalProperties": false,
+      "description": "隐写传输的核心评估指标。",
+      "properties": {
+        "bit_recovery_accuracy": {
+          "title": "Bit Recovery Accuracy",
+          "type": "number"
+        },
+        "bits_per_token": {
+          "title": "Bits Per Token",
+          "type": "number"
+        },
+        "complete_recovery_rate": {
+          "title": "Complete Recovery Rate",
+          "type": "number"
+        },
+        "decode_time_ms": {
+          "title": "Decode Time Ms",
+          "type": "number"
+        },
+        "decoded_messages": {
+          "title": "Decoded Messages",
+          "type": "integer"
+        },
+        "embedding_coverage": {
+          "title": "Embedding Coverage",
+          "type": "number"
+        },
+        "encode_time_ms": {
+          "title": "Encode Time Ms",
+          "type": "number"
+        },
+        "encoded_messages": {
+          "title": "Encoded Messages",
+          "type": "integer"
+        },
+        "recovered_bit_count": {
+          "title": "Recovered Bit Count",
+          "type": "integer"
+        },
+        "requested_bit_count": {
+          "title": "Requested Bit Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "embedding_coverage",
+        "bit_recovery_accuracy",
+        "complete_recovery_rate",
+        "bits_per_token",
+        "encoded_messages",
+        "decoded_messages",
+        "requested_bit_count",
+        "recovered_bit_count",
+        "encode_time_ms",
+        "decode_time_ms"
+      ],
+      "title": "SteganographyMetricsView",
+      "type": "object"
+    },
+    "TopologyView": {
+      "additionalProperties": false,
+      "description": "由节点和有向边组成的拓扑快照。",
+      "properties": {
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/EdgeView"
+          },
+          "title": "Edges",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/NodeView"
+          },
+          "title": "Nodes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "title": "TopologyView",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "前端使用的完整实验读取模型。",
+  "properties": {
+    "detections": {
+      "items": {
+        "$ref": "#/$defs/DetectionView"
+      },
+      "title": "Detections",
+      "type": "array"
+    },
+    "final_answers": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Final Answers",
+      "type": "object"
+    },
+    "messages": {
+      "items": {
+        "$ref": "#/$defs/MessageView"
+      },
+      "title": "Messages",
+      "type": "array"
+    },
+    "metrics": {
+      "$ref": "#/$defs/MetricsView"
+    },
+    "research": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResearchView"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "rounds": {
+      "items": {
+        "$ref": "#/$defs/RoundView"
+      },
+      "title": "Rounds",
+      "type": "array"
+    },
+    "run": {
+      "$ref": "#/$defs/RunView"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "topology": {
+      "$ref": "#/$defs/TopologyView"
+    },
+    "view_scope": {
+      "enum": [
+        "public",
+        "research"
+      ],
+      "title": "View Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "view_scope",
+    "run",
+    "topology",
+    "rounds",
+    "messages",
+    "detections",
+    "metrics",
+    "final_answers"
+  ],
+  "title": "ExperimentView",
+  "type": "object"
+}

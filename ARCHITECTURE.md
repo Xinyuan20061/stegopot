@@ -1,11 +1,12 @@
 # StegoPot 架构说明
 
-本文档定义 StegoPot 的四层目录、依赖方向、运行调用链和扩展规则。
+本文档定义 StegoPot Python 业务包的四层目录、仓库级展示子项目、依赖方向、
+运行调用链和扩展规则。
 `tests/test_architecture.py` 会自动验证这些约束。
 
 ## 核心约束
 
-1. `stegopot/` 根目录只允许存在 `domain`、`application`、
+1. Python 包目录 `stegopot/` 只允许存在 `domain`、`application`、
    `infrastructure` 和 `bootstrap` 四个逻辑层。
 2. 抽象接口和稳定模型属于最内层，不能依赖运行器或具体实现。
 3. 应用层和基础设施层相互独立，通过领域接口协作。
@@ -16,62 +17,82 @@
 ## 目录结构
 
 ```text
-stegopot/
-├── domain/                              # L0：稳定内核
-│   ├── model/                           # 纯数据与领域规则
-│   │   ├── action.py
-│   │   ├── detection.py
-│   │   ├── message.py
-│   │   └── topology.py
-│   └── interface/                       # ABC、Protocol 与能力契约
-│       ├── policy.py
-│       ├── detector.py
-│       ├── llm.py
-│       ├── observation.py
-│       ├── substrate.py
-│       └── stego.py
-├── application/                         # L1：框架运行与应用服务
-│   ├── engine/
-│   │   ├── agent.py
-│   │   ├── observation.py
-│   │   ├── router.py
-│   │   └── runtime.py
-│   └── services/
-│       ├── evaluation.py
-│       └── experiment.py
-├── infrastructure/                      # L2：具体实现和技术细节
-│   ├── detectors/
-│   │   ├── keyword.py
-│   │   ├── llm.py
-│   │   ├── mock.py
-│   │   └── perplexity.py
-│   ├── llm/
-│   │   ├── clients/
-│   │   │   ├── deepseek.py
-│   │   │   └── mock.py
-│   │   ├── action_parser.py
-│   │   ├── policy.py
-│   │   └── prompt.py
-│   ├── substrates/
-│   │   ├── communication.py
-│   │   ├── detection/
-│   │   │   └── substrate.py
-│   │   └── stego/
-│   │       └── substrate.py
-│   ├── integrations/
-│   │   └── stegokit/
-│   │       ├── adapter.py
-│   │       └── loader.py
-│   ├── settings/
-│   │   └── env.py
-│   ├── recorders/
-│   │   └── json.py
-│   └── vendor/
-│       └── stego-kit/                   # 上游 Git 子模块
-└── bootstrap/                           # L3：组合根
-    ├── builder.py
-    └── detection.py
+仓库根目录/
+├── stegopot/                            # Python 四层业务包
+│   ├── domain/                          # L0：稳定内核
+│   │   ├── model/                       # 纯数据与领域规则
+│   │   │   ├── action.py
+│   │   │   ├── detection.py
+│   │   │   ├── message.py
+│   │   │   └── topology.py
+│   │   └── interface/                   # ABC、Protocol 与能力契约
+│   │       ├── policy.py
+│   │       ├── detector.py
+│   │       ├── llm.py
+│   │       ├── observation.py
+│   │       ├── substrate.py
+│   │       └── stego.py
+│   ├── application/                     # L1：框架运行与应用服务
+│   │   ├── engine/
+│   │   │   ├── agent.py
+│   │   │   ├── observation.py
+│   │   │   ├── router.py
+│   │   │   └── runtime.py
+│   │   └── services/
+│   │       ├── evaluation.py
+│   │       └── experiment.py
+│   ├── infrastructure/                  # L2：具体实现和技术细节
+│   │   ├── detectors/
+│   │   │   ├── keyword.py
+│   │   │   ├── llm.py
+│   │   │   ├── mock.py
+│   │   │   └── perplexity.py
+│   │   ├── llm/
+│   │   │   ├── clients/
+│   │   │   │   ├── deepseek.py
+│   │   │   │   └── mock.py
+│   │   │   ├── action_parser.py
+│   │   │   ├── policy.py
+│   │   │   └── prompt.py
+│   │   ├── substrates/
+│   │   │   ├── communication.py
+│   │   │   ├── detection/
+│   │   │   │   └── substrate.py
+│   │   │   └── stego/
+│   │   │       └── substrate.py
+│   │   ├── integrations/
+│   │   │   └── stegokit/
+│   │   │       ├── adapter.py
+│   │   │       └── loader.py
+│   │   ├── settings/
+│   │   │   └── env.py
+│   │   ├── recorders/
+│   │   │   └── json.py
+│   │   └── vendor/
+│   │       └── stego-kit/               # 上游 Git 子模块
+│   └── bootstrap/                       # L3：组合根
+│       ├── builder.py
+│       └── detection.py
+└── stegopot-console/                    # 独立展示子项目
+    ├── backend/                         # 报告脱敏投影与 HTTP API
+    ├── frontend/                        # React 实验工作台
+    └── contracts/                       # 版本化 JSON Schema
 ```
+
+## 仓库级展示子项目
+
+`stegopot-console/` 不属于 Python 业务包的第五层，也不参与运行时对象组装。
+它通过文件边界读取 `ExperimentReport` JSON，再由后端投影成稳定、脱敏的
+`ExperimentView` 契约。前端只消费 HTTP JSON。
+
+```text
+StegoPot Runtime -> ExperimentReport JSON -> Console Backend -> Console Frontend
+```
+
+- Console 后端不得导入 `stegopot` Python 包。
+- 完整研究报告不得直接返回浏览器，必须经过投影器。
+- 公开视图不得包含秘密比特、解码比特、逐消息真值或原始观察。
+- 前端不得引用 Python 源码、业务实体或内部报告对象。
 
 ## 四层职责
 
