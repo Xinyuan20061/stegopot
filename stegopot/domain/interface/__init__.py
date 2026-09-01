@@ -1,5 +1,6 @@
 """StegoPot 对实现层公开的稳定扩展接口。"""
 
+from stegopot.domain.interface.detector import StegoDetector
 from stegopot.domain.interface.llm import LLMClient
 from stegopot.domain.interface.llm import LLMMessage
 from stegopot.domain.interface.llm import LLMResponse
@@ -25,6 +26,7 @@ __all__ = [
     "ObservationBuilder",
     "ObservationContext",
     "Policy",
+    "StegoDetector",
     "StegoEmbedRequest",
     "StegoEmbedResult",
     "StegoExtractRequest",

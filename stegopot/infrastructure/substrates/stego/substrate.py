@@ -151,6 +151,9 @@ class SteganographySubstrate(CommunicationSubstrate):
             metadata={
                 "message_id": message.message_id,
                 "algorithm": bundle.embed_request.algorithm,
+                "requested_bit_count": len(
+                    bundle.embed_request.secret_bits
+                ),
                 "consumed_bits": encode_result.consumed_bits,
                 "generated_token_ids": list(
                     encode_result.generated_token_ids
@@ -176,6 +179,21 @@ class SteganographySubstrate(CommunicationSubstrate):
                 material=bundle.decode_material,
             ))
             decoded_by_sender[message.sender] = decode_result
+          expected_bits = bundle.embed_request.secret_bits[
+              :encode_result.consumed_bits
+          ]
+          recovered_bits = decode_result.bits[:len(expected_bits)]
+          matching_bit_count = sum(
+              expected == recovered
+              for expected, recovered in zip(
+                  expected_bits,
+                  recovered_bits,
+              )
+          )
+          complete_recovery = (
+              len(recovered_bits) == len(expected_bits)
+              and recovered_bits == expected_bits
+          )
           self._decoded_by_node[message.recipient].append({
               "message_id": message.message_id,
               "sender": message.sender,
@@ -193,7 +211,11 @@ class SteganographySubstrate(CommunicationSubstrate):
               metadata={
                   "message_id": message.message_id,
                   "algorithm": bundle.embed_request.algorithm,
+                  "expected_bit_count": len(expected_bits),
                   "decoded_bit_count": len(decode_result.bits),
+                  "matching_bit_count": matching_bit_count,
+                  "complete_recovery": complete_recovery,
+                  "decode_time_seconds": decode_result.decode_time_seconds,
               },
           ))
         processed_messages.append(transformed)

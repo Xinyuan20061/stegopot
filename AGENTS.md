@@ -23,12 +23,18 @@ bootstrap -> application / infrastructure -> domain
 ## L2：基础设施层
 
 - LLM 策略、提示、解析器和客户端放在 `stegopot/infrastructure/llm/`。
+- 隐写检测器实现放在 `stegopot/infrastructure/detectors/`，并且只能依赖
+  `StegoDetector`、检测领域模型及注入的稳定能力接口。
 - Substrate 实现放在 `stegopot/infrastructure/substrates/`；复杂功能必须使用
   独立子目录，例如 `substrates/stego/`。
 - 第三方 SDK 适配器放在 `stegopot/infrastructure/integrations/<provider>/`。
 - 环境变量等技术配置放在 `stegopot/infrastructure/settings/`。
+- JSON、数据库等报告记录器放在 `stegopot/infrastructure/recorders/`，记录器
+  只能接收标准映射，不能反向导入应用层报告类型。
 - 固定的上游源码放在 `stegopot/infrastructure/vendor/<project>/`。
 - Stego Substrate 必须依赖 `StegoTool`，不能直接导入 StegoKitAdapter 或 StegoKit。
+- Detection Substrate 必须依赖 `StegoDetector`，不能直接导入具体检测器。
+- 检测器只能读取公开消息，不得读取秘密比特、算法材料或中央真实标签。
 
 ## L3：启动层
 

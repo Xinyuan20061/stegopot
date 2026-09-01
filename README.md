@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.11+"></a>
-  <a href="https://github.com/Xinyuan20061/stegopot"><img src="https://img.shields.io/badge/version-0.4.0-2F855A" alt="Version 0.4.0"></a>
+  <a href="https://github.com/Xinyuan20061/stegopot"><img src="https://img.shields.io/badge/version-0.5.0-2F855A" alt="Version 0.5.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-D22128" alt="Apache License 2.0"></a>
 </p>
 
@@ -19,8 +19,9 @@ StegoPot 将智能体身份、决策策略、通信拓扑、运行调度、环�
 
 当前版本已经能够运行自定义拓扑的多智能体交互，并通过
 [Dwinovo/StegoKit](https://github.com/Dwinovo/stego-kit) 执行真实的生成式
-隐写编码与解码。项目仍处于研究原型阶段，不应被视为已经过安全审计的
-隐蔽通信产品。
+隐写编码与解码，并通过可插拔检测器、中央真实标签和统一指标运行基础
+隐写检测实验。项目仍处于研究原型阶段，不应被视为已经过安全审计的
+隐蔽通信或检测产品。
 
 ## 核心能力
 
@@ -30,6 +31,9 @@ StegoPot 将智能体身份、决策策略、通信拓扑、运行调度、环�
 - **同步轮次调度**：同一轮的节点基于相同历史独立决策，消息在下一轮可见。
 - **环境基底接口**：Substrate 统一承载消息变换、局部观察、奖励、事件和终止规则。
 - **StegoKit 适配**：以工具协议隔离第三方实现，支持按需加载本地子模块。
+- **公开信道检测**：检测器只能读取环境过滤后的公开文本，不能读取秘密比特。
+- **统一检测评估**：自动计算 Precision、Recall、F1、误报率、漏报率和恢复率。
+- **可复现实验报告**：场景保存种子和上下文，并可原子写入完整 JSON 报告。
 - **可审计运行结果**：记录轮次、动作、消息、路由错误、奖励、环境事件和最终状态。
 - **离线可复现测试**：Mock LLM 与确定性微型语言模型无需网络或模型下载。
 
@@ -43,7 +47,8 @@ StegoPot 将智能体身份、决策策略、通信拓扑、运行调度、环�
 | 运行记录与回放数据 | 可用 | `RunResult` 可转换为适合 JSON 序列化的字典 |
 | 自定义环境规则 | 可用 | 可实现消息过滤、状态、奖励、事件和提前终止 |
 | 生成式文本隐写 | 可用 | StegoKit 负责载密文本生成与授权节点解码 |
-| 隐写检测与攻防评估 | 尚未实现 | 当前没有检测器、统计指标、对抗训练或基准实验 |
+| 隐写检测与基础评估 | 基础可用 | 支持检测器热插拔、审计观察、中央标签和二分类/恢复指标 |
+| 高级攻防与基准训练 | 尚未实现 | 尚无训练数据集、校准流程、对抗训练和成熟检测模型 |
 | 分布式执行与可视化界面 | 尚未实现 | 当前运行器为单进程同步调度，主要通过 Python API 使用 |
 
 项目采用强制单向依赖的分层结构。完整目录职责、允许依赖、Runtime
@@ -90,10 +95,14 @@ flowchart LR
 | --- | --- | --- |
 | `AgentAction` / `AgentMessage` / `AgentTopology` | `domain/model` | 稳定领域数据与拓扑规则 |
 | `Policy` / `LLMClient` / `Substrate` / `StegoTool` | `domain/interface` | 可替换组件的抽象契约 |
+| `StegoDetector` / `DetectionResult` | `domain/interface` / `domain/model` | 公开消息检测契约和稳定结果 |
 | `AgentNode` / `MessageRouter` / `MultiAgentRuntime` | `application/engine` | 节点状态、路由和同步调度 |
 | `LLMPolicy` / `DeepSeekClient` | `infrastructure/llm` | LLM 决策与供应商客户端实现 |
 | `CommunicationSubstrate` / `SteganographySubstrate` | `infrastructure/substrates` | 具体环境规则 |
+| `DetectionSubstrate` | `infrastructure/substrates/detection` | 包装内部环境并生成检测事件和审计观察 |
 | `StegoKitAdapter` | `infrastructure/integrations` | 将 StegoTool 契约映射到第三方工具 |
+| `ExperimentScenario` / `run_experiment` | `application/services` | 场景运行、指标计算和统一报告 |
+| `JsonExperimentRecorder` | `infrastructure/recorders` | 原子保存完整实验 JSON 报告 |
 | `MultiAgentBuilder` | `bootstrap` | 组合策略、运行引擎与环境 |
 
 这种边界允许单独替换模型供应商、节点策略、拓扑或隐写算法，而无需修改
@@ -120,7 +129,8 @@ flowchart LR
 │   ├── multi_agent_mock_demo.py           # 离线三节点协作
 │   ├── deepseek_reply_test.py              # 单次 DeepSeek 回复
 │   ├── multi_agent_deepseek_demo.py        # DeepSeek 三节点协作
-│   └── steganography_interaction_demo.py   # StegoKit 隐写交互
+│   ├── steganography_interaction_demo.py   # StegoKit 隐写交互
+│   └── stego_detection_demo.py             # 离线隐写检测闭环
 ├── stegopot/
 │   ├── domain/                             # L0：稳定内核
 │   │   ├── model/                          # 领域模型与规则
@@ -130,8 +140,11 @@ flowchart LR
 │   │   └── services/                       # 完整应用用例
 │   ├── infrastructure/                     # L2：具体实现与技术细节
 │   │   ├── llm/                            # LLM 策略与客户端
+│   │   ├── detectors/                      # Mock、关键词、困惑度和 LLM 检测器
+│   │   ├── recorders/                      # 实验报告持久化
 │   │   ├── substrates/
-│   │   │   └── stego/                      # 隐写环境功能目录
+│   │   │   ├── stego/                      # 隐写环境功能目录
+│   │   │   └── detection/                  # 检测环境装饰器
 │   │   ├── integrations/
 │   │   │   └── stegokit/                   # StegoKit 适配器和加载器
 │   │   ├── settings/                       # .env 配置读取
@@ -158,8 +171,8 @@ flowchart LR
 ### 1. 克隆仓库
 
 ```powershell
-git clone --recurse-submodules https://github.com/Xinyuan20061/stegopot-multi-agent.git
-Set-Location stegopot-multi-agent
+git clone --recurse-submodules https://github.com/Xinyuan20061/stegopot.git
+Set-Location stegopot
 ```
 
 如果仓库已经克隆但子模块目录为空：
@@ -263,6 +276,23 @@ DeepSeek，也不下载模型。控制台将展示：
 - Substrate 记录的编码、解码和投递事件。
 
 微型模型仅用于验证端到端接口和数据边界，不代表真实语言质量或隐写安全性。
+
+### 离线隐写检测闭环
+
+```powershell
+.\.venv\Scripts\python.exe examples\stego_detection_demo.py
+```
+
+该示例依次发送一条普通消息和一条载密消息，并让检测环境分析实际投递的
+公开文本。运行后会显示：
+
+- 普通消息对应的 `stego_cleared` 事件；
+- 载密消息对应的 `stego_detected` 事件；
+- Precision、Recall、F1、嵌入覆盖率和比特恢复准确率；
+- 完整 JSON 报告路径，默认位于 `artifacts/detection/`。
+
+示例使用固定文本工具和关键词检测器，只用于验证数据隔离、事件和评估
+链路。真实实验应替换为 `StegoKitAdapter` 以及经过独立数据校准的检测器。
 
 ## Python API
 
@@ -422,6 +452,9 @@ SteganographySubstrate 不会把完整隐写请求原样交给接收节点：
 | `secret_bits`、算法配置和安全材料 | Substrate 内部处理过程 |
 | 解码结果 | 授权节点的局部环境观察 |
 | 算法、token ID、耗时和容量统计 | 调用方持有的 `RunResult.substrate_events` |
+| 检测器输入 | 环境过滤后的公开正文、公开元数据和公开实验上下文 |
+| 检测结果 | 审计节点的局部环境观察和中央实验事件 |
+| 隐写真实标签、TP/FP/TN/FN | 只存在于中央实验事件和最终评估报告 |
 
 授权节点在下一轮通过以下路径读取自己的解码结果：
 
@@ -431,6 +464,69 @@ observation["environment"]["steganography"]["decoded_messages"]
 
 该隔离是框架级可见性约束，不等同于密码学安全证明。调用方能够读取完整
 研究日志；已授权节点也可能在后续动作中主动泄露解码内容。
+
+## 检测实验 API
+
+`DetectionExperimentBuilder` 会组装标准发送者、授权接收者和审计者，并按
+以下顺序组合环境：
+
+```text
+DetectionSubstrate(
+    SteganographySubstrate(
+        CommunicationSubstrate
+    )
+)
+```
+
+检测器不会接触原始 `AgentAction.metadata["stego"]`。内部隐写环境完成载体
+生成和私有字段删除后，检测环境才构造 `DetectionRequest`。
+
+```python
+from stegopot.application.engine import RuntimeConfig
+from stegopot.application.services import ExperimentScenario, run_experiment
+from stegopot.bootstrap import DetectionExperimentBuilder
+from stegopot.infrastructure.detectors import PerplexityStegoDetector
+from stegopot.infrastructure.recorders import JsonExperimentRecorder
+
+detector = PerplexityStegoDetector(
+    model=reference_model,
+    tokenizer=reference_tokenizer,
+    threshold=50.0,
+)
+runtime = DetectionExperimentBuilder(
+    stego_tool=stego_tool,
+    detector=detector,
+).build(
+    sender_policy=sender_policy,
+    receiver_policy=receiver_policy,
+    auditor_policy=auditor_policy,
+    config=RuntimeConfig(max_rounds=5),
+)
+recorder = JsonExperimentRecorder(output_dir="artifacts/detection")
+
+try:
+    report = run_experiment(
+        runtime,
+        scenario=ExperimentScenario(
+            name="ac-perplexity-baseline",
+            task="发送消息并审计公开信道。",
+            seed=2026,
+        ),
+        recorder=recorder.write,
+    )
+finally:
+    runtime.close()
+```
+
+可直接替换的检测器包括：
+
+- `MockStegoDetector`：离线测试使用的预设分数检测器；
+- `KeywordStegoDetector`：验证链路使用的确定性规则基线；
+- `PerplexityStegoDetector`：依赖本地参考模型的困惑度阈值基线；
+- `LLMStegoDetector`：通过任意 `LLMClient` 返回结构化判定的 LLM 基线。
+
+关键词、困惑度或 LLM 判定都不构成隐写存在性的证明。正式实验必须记录
+检测器版本、阈值校准数据和随机种子。
 
 ## 运行结果
 
@@ -447,6 +543,8 @@ observation["environment"]["steganography"]["decoded_messages"]
 | `termination_reason` | 最大轮数、最终答案或环境终止原因 |
 
 使用 `result.to_dict()` 可以得到适合写入 JSON 或交给评估器的结构。
+`run_experiment()` 会进一步返回 `ExperimentReport`，其中包含场景配置、
+完整 `RunResult`、检测指标和隐写恢复指标。
 
 ## 测试
 
@@ -464,17 +562,18 @@ $env:RUN_DEEPSEEK_LIVE_TEST = "1"
 ```
 
 测试范围包括拓扑与路由、同步调度、终止规则、异常处理、Substrate 生命周期、
-隐写数据隔离、StegoKit AC 往返恢复、DeepSeek 请求构造和分层依赖边界。
+隐写数据隔离、StegoKit AC 往返恢复、检测真实标签隔离、二分类和恢复指标、
+JSON 报告、LLM/困惑度检测基线、DeepSeek 请求构造和分层依赖边界。
 
 ## 扩展方向
 
 后续功能可以在现有边界内逐步加入：
 
-- 隐写检测器、审计 Agent 与检测指标；
-- 编码者、解码者和审计者的标准场景配置；
+- 经独立数据校准的统计、神经网络和集成检测器；
+- LLM 节点受权限控制的通用工具调用机制；
 - 多种 StegoKit 算法的批量对比实验；
-- 语义质量、容量、恢复率和可检测性的统一评估；
-- 运行记录持久化、实验复现清单与可视化界面；
+- 语义质量、检测 ROC/AUC 和跨模型泛化评估；
+- 批量实验矩阵、运行复现清单与可视化界面；
 - 并发或分布式节点调度。
 
 ## 来源与许可

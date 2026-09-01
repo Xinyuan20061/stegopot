@@ -40,6 +40,14 @@ ALLOWED_PROJECT_DEPENDENCIES = {
         "infrastructure.llm",
         "infrastructure.settings",
     },
+    "infrastructure.detectors": {
+        "domain.interface",
+        "domain.model",
+        "infrastructure.detectors",
+    },
+    "infrastructure.recorders": {
+        "infrastructure.recorders",
+    },
     "infrastructure.substrates": {
         "domain.interface",
         "domain.model",
@@ -56,7 +64,9 @@ ALLOWED_PROJECT_DEPENDENCIES = {
         "domain.interface",
         "domain.model",
         "infrastructure.integrations",
+        "infrastructure.detectors",
         "infrastructure.llm",
+        "infrastructure.recorders",
         "infrastructure.settings",
         "infrastructure.substrates",
     },

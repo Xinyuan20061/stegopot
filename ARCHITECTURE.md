@@ -20,10 +20,12 @@ stegopot/
 ├── domain/                              # L0：稳定内核
 │   ├── model/                           # 纯数据与领域规则
 │   │   ├── action.py
+│   │   ├── detection.py
 │   │   ├── message.py
 │   │   └── topology.py
 │   └── interface/                       # ABC、Protocol 与能力契约
 │       ├── policy.py
+│       ├── detector.py
 │       ├── llm.py
 │       ├── observation.py
 │       ├── substrate.py
@@ -35,8 +37,14 @@ stegopot/
 │   │   ├── router.py
 │   │   └── runtime.py
 │   └── services/
-│       └── evaluation.py
+│       ├── evaluation.py
+│       └── experiment.py
 ├── infrastructure/                      # L2：具体实现和技术细节
+│   ├── detectors/
+│   │   ├── keyword.py
+│   │   ├── llm.py
+│   │   ├── mock.py
+│   │   └── perplexity.py
 │   ├── llm/
 │   │   ├── clients/
 │   │   │   ├── deepseek.py
@@ -46,6 +54,8 @@ stegopot/
 │   │   └── prompt.py
 │   ├── substrates/
 │   │   ├── communication.py
+│   │   ├── detection/
+│   │   │   └── substrate.py
 │   │   └── stego/
 │   │       └── substrate.py
 │   ├── integrations/
@@ -54,18 +64,22 @@ stegopot/
 │   │       └── loader.py
 │   ├── settings/
 │   │   └── env.py
+│   ├── recorders/
+│   │   └── json.py
 │   └── vendor/
 │       └── stego-kit/                   # 上游 Git 子模块
 └── bootstrap/                           # L3：组合根
-    └── builder.py
+    ├── builder.py
+    └── detection.py
 ```
 
 ## 四层职责
 
 ### L0：Domain
 
-`domain/model` 保存 `AgentAction`、`AgentMessage` 和 `AgentTopology` 等稳定
-领域对象。它只依赖 Python 标准库。
+`domain/model` 保存 `AgentAction`、`AgentMessage`、`AgentTopology`、
+`DetectionRequest` 和 `DetectionResult` 等稳定领域对象。它只依赖 Python
+标准库。
 
 `domain/interface` 集中保存所有可替换能力的抽象契约：
 
@@ -74,6 +88,7 @@ stegopot/
 - `ObservationBuilder`
 - `Substrate`
 - `StegoTool`
+- `StegoDetector`
 
 接口所需的请求、结果和上下文与接口放在同一文件中。该区域只能依赖
 `domain/model`，不能导入应用层或基础设施实现。
@@ -83,21 +98,25 @@ stegopot/
 `application/engine` 实现节点状态、消息路由、默认观察和同步轮次调度。
 它只认识领域模型和抽象接口，不知道 DeepSeek、StegoKit 或具体 Substrate。
 
-`application/services` 存放完整应用用例，例如运行一次实验并生成结果。
-应用服务可以调用 Engine，但不能选择基础设施实现。
+`application/services` 存放完整应用用例，例如运行场景、计算检测和隐写
+指标并生成 `ExperimentReport`。应用服务可以调用 Engine，但不能选择
+基础设施实现或直接写入特定存储。
 
 ### L2：Infrastructure
 
 基础设施层提供领域接口的具体实现：
 
 - `llm`：LLMPolicy、提示构造、动作解析和模型供应商客户端。
-- `substrates`：通信、隐写及未来环境规则。
+- `detectors`：Mock、关键词、困惑度和 LLM 等检测器实现。
+- `substrates`：通信、隐写、检测装饰器及未来环境规则。
 - `integrations`：把第三方 API 映射到稳定接口。
+- `recorders`：JSON、数据库等实验报告持久化实现。
 - `settings`：环境变量等技术配置读取。
 - `vendor`：必须固定版本的上游源码。
 
 基础设施层不得导入应用层。不同基础设施功能之间也应通过领域接口协作；
-例如 `SteganographySubstrate` 依赖 `StegoTool`，而不是 `StegoKitAdapter`。
+例如 `SteganographySubstrate` 依赖 `StegoTool`，而不是 `StegoKitAdapter`；
+`DetectionSubstrate` 依赖 `StegoDetector`，而不是某个具体检测器。
 
 ### L3：Bootstrap
 
@@ -140,8 +159,10 @@ flowchart TB
 | `application.services` | `application.engine`、领域层、自身 |
 | `infrastructure.settings` | 自身、Python 标准库 |
 | `infrastructure.llm` | 领域层、`infrastructure.settings`、自身 |
+| `infrastructure.detectors` | 领域层、自身 |
 | `infrastructure.substrates` | 领域层、自身 |
 | `infrastructure.integrations` | `domain.interface`、自身 |
+| `infrastructure.recorders` | 自身、Python 标准库 |
 | `bootstrap` | 所有层；只能做对象组装 |
 
 ## Runtime 调用链
@@ -195,6 +216,29 @@ flowchart LR
 - 只有 StegoKit loader 可以定位 `infrastructure/vendor/stego-kit`。
 - 秘密比特和算法材料不会进入公开 AgentMessage 元数据。
 
+## 检测调用链
+
+```mermaid
+flowchart LR
+    R[MessageRouter] --> SS[SteganographySubstrate]
+    SS -->|过滤私有字段后的公开消息| DS[DetectionSubstrate]
+    DS -->|DetectionRequest| D[StegoDetector]
+    D -->|DetectionResult| DS
+    DS -->|无真实标签| AO[审计节点环境观察]
+    DS -->|含 ground_truth| CE[中央 SubstrateEvent]
+    CE --> EV[application/services/evaluation]
+    EV --> ER[ExperimentReport]
+    ER --> JR[注入的 JSON Recorder]
+```
+
+关键隔离点：
+
+- `DetectionSubstrate` 是装饰器，必须在内部环境完成消息变换后再检测。
+- `DetectionRequest` 只包含公开正文、公开元数据和公开实验上下文。
+- 审计节点只能读取 `DetectionFinding`，其中不包含 `ground_truth`。
+- TP、TN、FP、FN 只根据中央环境事件计算。
+- 记录器只接收可序列化映射，不依赖应用服务或运行器类型。
+
 ## 新代码放置规则
 
 ### 新增领域模型
@@ -224,6 +268,18 @@ infrastructure/substrates/<feature>/
 
 适配器放入 `infrastructure/integrations/<provider>/`。需要固定上游源码时，
 源码放入 `infrastructure/vendor/<project>/`，并通过 loader 延迟加载。
+
+### 新增检测器
+
+1. 检测请求、结果和接口放在领域层。
+2. 具体检测器放入 `infrastructure/detectors/<name>.py`。
+3. 检测器不得读取 `AgentAction.metadata["stego"]`、秘密比特或真实标签。
+4. 需要模型时通过构造参数接收 `LLMClient` 或本地模型，不在内部硬编码供应商。
+
+### 新增记录器
+
+持久化实现放入 `infrastructure/recorders/`。记录器只接收标准 Mapping，
+不得导入 `ExperimentReport`、`RunResult` 或应用层模块。
 
 ### 新增应用用例
 
