@@ -4,11 +4,12 @@
 <h1 align="center">StegoPot</h1>
 <p align="center">可配置拓扑、内置隐写能力、开放组件接口与全过程审计的多智能体实验框架</p>
 
-StegoPot 为多 Agent 隐写研究提供可复用的实验基础设施。使用者定义任务、节点、
-通信关系和评价方法，框架负责执行、信息投影、资源注入、预算约束与审计留存。
+StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 或 JSON 定义任务、
+节点、通信拓扑与评价方式，统一执行智能体交互、隐写编解码、信道干预和审计记录。
 
-项目交付的是**框架，不是预置实验集合**：不附带论文专用场景、共谋协议、历史结果或 Console。
-已有能力可以通过配置组合；新的策略、算法和实验设计通过独立插件接入。
+框架以**配置驱动、信息隔离、可扩展接口和可核验记录**为核心：研究者可以组合内置组件
+开展实验，也可以通过独立插件实现新的策略、协议、检测方法和评价指标。
+命令行与 Python API 共用同一条执行链路，实验工作区可独立于框架安装目录。
 
 **框架版本：0.8.0 · 插件接口版本：1.1 · Python：3.11+**
 
@@ -30,6 +31,9 @@ StegoPot 为多 Agent 隐写研究提供可复用的实验基础设施。使用�
 
 ## 框架能力
 
+适用于多 Agent 通信协议研究、隐写载体传输与恢复实验、信道干预对照、公开文本检测评估，
+以及需要区分公开信息、节点私有材料和中央评价数据的交互实验。
+
 | 能力 | 可以完成的工作 | 前提与边界 |
 | --- | --- | --- |
 | 多 Agent 交互 | 自定义节点、角色、定向通信边、轮次和局部状态 | 当前是同步轮次调度，不是分布式执行系统 |
@@ -45,9 +49,48 @@ StegoPot 为多 Agent 隐写研究提供可复用的实验基础设施。使用�
 | 开放扩展 | 十类组件统一注册、校验和按需构造 | 插件需要安装并显式启用，不能覆盖核心组件 |
 
 **StegoKit、基础检测、信息隔离和审计属于核心能力。**
-具体研究假设、论文协议、任务奖励和专用评价属于使用者的实验或扩展，不写死在内核中。
+具体任务、研究假设和实验协议由配置或插件定义，框架负责一致的执行与记录。
+
+### 核心概念
+
+| 概念 | 职责 |
+| --- | --- |
+| AgentNode | 保存节点身份、角色及本次试验的策略状态 |
+| Policy | 将节点局部观察和上一状态转换为动作与下一状态 |
+| Substrate | 管理环境状态，提供局部观察，并处理一轮候选动作与消息 |
+| Scenario / Plan | 根据配置生成试验计划，描述节点、拓扑、环境和评价安排 |
+| Trial / Run | Trial 是一次独立试验；Run 执行完整计划，可包含多个 Trial |
+| Resource | 按名称声明的模型或 codec，由框架按作用域构造并注入组件 |
+| Audit | 记录执行事实，分别提供研究视图、公开视图及完整性核验 |
+
+```text
+用户配置 -> 预检与计划 -> 构造节点和资源 -> 同步轮次交互
+                                      -> 环境 / 信道 / 检测 / 奖励
+                                      -> 中央评价 -> 报告与审计封印
+```
+
+### 内置组件
+
+| 组件 ID | 类型 | 用途 |
+| --- | --- | --- |
+| `core.explicit` | scenario | 根据显式节点和通信边生成一次或多次试验 |
+| `core.communication` | substrate | 基础消息通信环境 |
+| `core.scripted` / `core.echo` | policy | 预设动作序列 / 根据收件箱生成最终答案 |
+| `core.llm` | policy | 使用模型根据局部观察生成动作 |
+| `core.chat_completions` | llm | 接入兼容 Chat Completions 的模型服务 |
+| `core.stegokit` | codec | 使用本地模型完成隐写编码与解码 |
+| `core.codec_sender` / `core.codec_receiver` | policy | 在指定轮次调用 codec 发送或恢复比特 |
+| `core.block` / `core.replace` | channel | 阻断消息 / 替换公开正文 |
+| `core.keyword` / `core.llm_detector` | detector | 关键词检测基线 / 模型判别器 |
+| `core.metrics` / `core.stego_metrics` | evaluator | 基础运行统计 / 比特恢复指标 |
+
+检测结果用于研究评价，其有效性需要在目标数据与威胁模型下验证。
+参数模式可通过 `python -m stegopot plugins inspect core` 查询，
+单个内置组件可使用 `python -m stegopot schema --component core.llm` 查看。
 
 ## 项目结构
+
+以下路径以仓库根目录为基准；安装包仅分发 `stegopot/` 中的框架代码和必要的供应商文件。
 
 ```text
 stegopot/                       Python 框架包
@@ -61,7 +104,7 @@ stegopot/                       Python 框架包
     settings/                   配置、工作区、环境快照
     plugins/                    安装发现与组件校验
     llm/                        模型适配、策略、提示、调用审计
-    integrations/stegokit/      核心 StegoKit 适配与载体编解码
+    integrations/stegokit/       核心 StegoKit 适配与载体编解码
     vendor/stego-kit/            固定版本上游子模块
     substrates/                 环境和信道实现
     detectors/                  基础检测器
@@ -76,13 +119,15 @@ pyproject.toml                  安装与打包声明
 源码遵守 `bootstrap -> application / infrastructure -> domain` 的依赖方向。
 插件实现可以有自己的分层，但不应反向依赖框架的具体引擎或基础设施。
 
-工作区还可以有本地 `.env`、`.venv/`、`tests/contracts/` 和运行时生成的 `outputs/`。
-它们不属于框架业务层，也不提交研究仓库。
-安装工具可能再次生成 `*.egg-info/`；这是可再生的打包元数据，不应手动编辑或提交。
+实验工作区中的 `.env` 保存本地凭证，`.venv/` 保存虚拟环境，`outputs/` 保存运行产物。
+本仓库的忽略规则排除这些目录、测试文件及 `configs/` 中除目录说明外的用户文件。
+独立工作区应按自己的数据管理要求设置版本控制规则，避免提交凭证和私有研究材料。
 
 ## 安装
 
 ### 从仓库安装
+
+需要 Python 3.11 或更高版本及 Git。Windows 下可执行：
 
 ```powershell
 git clone --recurse-submodules https://github.com/Xinyuan20061/stegopot.git
@@ -95,13 +140,23 @@ python -m venv .venv
 已有虚拟环境时跳过创建步骤。本文后续的 `python` 都指安装了 StegoPot 的解释器；
 在 Windows 中也可始终用 `.\.venv\Scripts\python.exe` 替代，避免调用其他环境。
 
-Linux/macOS 使用 `.venv/bin/python`。已有源码但缺少子模块时，在仓库根目录运行：
+Linux/macOS 可使用以下安装命令：
+
+```shell
+git clone --recurse-submodules https://github.com/Xinyuan20061/stegopot.git
+cd stegopot
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m stegopot --version
+```
+
+已有源码但缺少子模块时，在仓库根目录运行：
 
 ```shell
 git submodule update --init --recursive
 ```
 
-普通规则通信、HTTP 模型请求、配置与审计仅依赖轻量核心包。
+普通规则通信、HTTP 模型请求、配置与审计只需核心依赖。
 本地隐写能力另外安装可选依赖：
 
 ```shell
@@ -109,10 +164,11 @@ python -m pip install -e ".[stego]"
 ```
 
 这会安装声明的 NumPy、PyTorch、Transformers 等依赖，但**不会下载模型权重**。
-模型目录、tokenizer、硬件资源和算法参数由使用者准备。
+模型目录、tokenizer、硬件资源和算法参数由使用者准备；本地推理依赖的 Python 与硬件支持范围
+还须满足所安装的 PyTorch、Transformers 版本要求。
 通过仓库 ZIP 获取源码时，不能假定其中包含子模块；构建分发包前必须补齐 StegoKit 源码。
 
-### PyCharm
+### 在 PyCharm 中运行
 
 - 解释器选择当前项目的 `.venv/Scripts/python.exe`。
 - 工作目录选择实验工作区根目录；在本仓库内使用时就是仓库根目录。
@@ -121,11 +177,10 @@ python -m pip install -e ".[stego]"
 
 ## 首次运行
 
-### 编写自己的配置
+### 创建实验配置
 
-将用户定义的 YAML 或 JSON 放入工作区 `configs/`。
-以下是说明格式的最小通信配置，可作为 `configs/communication.yaml` 的起点；
-仓库本身不会自动生成该文件，也不会预置此实验。
+在工作区创建 `configs/communication.yaml`，内容如下。
+此示例使用两个规则节点验证配置、通信和审计链路，无需 API 密钥或本地模型：
 
 ```yaml
 schema_version: "1"
@@ -152,7 +207,6 @@ scenario:
     max_rounds: 2
 ```
 
-该配置只使用规则节点，不调用模型，也不证明隐写或共谋现象。
 `core.explicit` 根据声明生成计划；`core.scripted` 返回预设动作；`core.echo` 根据收件箱返回答案。
 边 `[sender, receiver]` 只允许该方向通信，不自动生成反向边。
 
@@ -166,9 +220,13 @@ python -m stegopot validate communication
 python -m stegopot run communication
 ```
 
-`validate` 检查配置、组件和计划，返回结构化错误或警告，不构造模型客户端，不发送模型请求。
-`python -m stegopot doctor communication` 另外检查已知本地资源的安装和文件条件，仍不加载模型。
+`validate` 检查配置、组件和计划，报告诊断信息；文件读取与解析错误也可能直接作为入口错误返回。
+`python -m stegopot doctor communication` 另外检查已知本地资源的安装和文件条件。
+两者均不构造模型客户端、不执行模型推理。第三方场景和预检钩子须遵守相同的无副作用约定。
 `run` 执行同样的预检后开始实验，输出本次结果目录和状态。
+
+正常完成时，第 0 轮由 sender 发出 `status-ready`，第 1 轮由 receiver 读取并形成最终答案。
+报告应显示 `completed`，模型调用次数为 0；消息和答案可在试验结果中查看。
 
 默认结果位置为 `outputs/<run-id>/`。阅读其中的 `report.md`、
 `experiment-report.json`，需要复核时运行：
@@ -177,7 +235,24 @@ python -m stegopot run communication
 python -m stegopot verify outputs/<run-id>
 ```
 
-`<run-id>` 应替换为本次命令实际输出的目录名，而不是文字占位符。
+文中的 `<run-id>`、`<trial-id>` 等占位符均需替换为本次输出中的实际标识。
+
+### 修改节点与拓扑
+
+在 `scenario.config.nodes` 中新增节点，分别配置 `id`、`role` 和 `policy`；
+在 `scenario.config.edges` 中声明允许的有向通信边。也可在顶层覆盖拓扑，例如为上面的两个节点开启双向通信：
+
+```yaml
+topology:
+  edges:
+    - [sender, receiver]
+    - [receiver, sender]
+```
+
+此片段应合并到完整配置。顶层 `topology.edges` 替换场景拓扑，不与其合并；
+添加通信边只授予发送权限，节点是否发送仍由策略决定。
+同一轮产生的消息在下一轮可见，设计多轮协议时应相应增加 `scenario.config.max_rounds`。
+已有节点的策略可通过顶层 `policies.<节点ID>` 覆盖；该字段不能新增节点。
 
 ### 使用独立工作区
 
@@ -188,7 +263,7 @@ python -m stegopot init D:/Research/my-workspace
 python -m stegopot list --workspace D:/Research/my-workspace
 ```
 
-`init` 只创建空 `configs/`，重复执行不会覆盖现有 `.env` 或生成默认实验。
+`init` 创建工作区及空 `configs/`，重复执行不覆盖现有文件。
 在该工作区加入自己的配置后：
 
 ```shell
@@ -203,10 +278,10 @@ python -m stegopot run communication --workspace D:/Research/my-workspace
 ### DeepSeek 与兼容服务
 
 内置 `core.chat_completions` 负责 HTTP 传输，`core.llm` 负责节点决策。
-不需要安装旧 DeepSeek 实验扩展。工作区 `.env` 中设置：
+以 DeepSeek 为例，在工作区 `.env` 中设置凭证：
 
 ```dotenv
-DEEPSEEK_API_KEY=填写你的真实密钥
+DEEPSEEK_API_KEY=REPLACE_WITH_API_KEY
 ```
 
 模型名称由资源配置明确指定。下面是一份双 LLM 节点配置；使用前必须将
@@ -254,10 +329,12 @@ runtime:
   max_output_tokens: 256
 ```
 
-可将该用户配置命名为 `configs/llm.yaml`，先 `validate llm` 再 `run llm`。
-模型返回不符合严格动作协议时保留真实失败，不自动生成替代答案。
+将配置放入 `configs/llm.yaml`，执行 `python -m stegopot validate llm` 后，
+使用 `python -m stegopot run llm` 发起实际请求。
+两个节点共用模型连接参数，但节点状态及资源实例按各自作用域管理。
+本例限定动作类型和目标；不符合协议的响应记为失败，实际响应保留在研究日志中。
 
-### 模型参数
+### 连接参数
 
 | 参数 | 含义 |
 | --- | --- |
@@ -273,21 +350,39 @@ runtime:
 URL 不得包含凭证、查询参数或片段。客户端不跟随重定向，不自动重试；
 一次 `generate` 最多一次 HTTP 请求，错误正文不会原样打印到命令行。
 
-`core.llm` 的常用参数为 `client`、`role`、`prompt`、`model`、`temperature`、
-`max_tokens`、`keep_history`、`active_round`、`action_kind`、`target`。
-未指定 `active_round` 时，每个活动轮次都可能请求模型；默认不保留完整对话历史。
-全部组件参数可由 `python -m stegopot plugins inspect core` 查询。
+### 节点策略参数
+
+以下默认值适用于配置组件 `core.llm`：
+
+| 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| `client` | 必填 | 引用 `resources` 中声明的模型资源名称 |
+| `role` | 节点 ID | 模型提示中的角色描述；与节点展示角色分别配置 |
+| `prompt` | 空字符串 | 置于通用动作约定之前的系统提示 |
+| `model` | 资源默认值 | 覆盖本节点调用的模型名称 |
+| `temperature` | 0 | 采样温度，配置范围为 0 到 2；还须满足服务端限制 |
+| `max_tokens` | 384 | 本节点请求的最大输出 token，另受全局每次调用上限约束 |
+| `keep_history` | false | 是否保留本节点的模型对话历史；启用后使用策略的有限历史窗口 |
+| `active_round` | 不限定 | 只在指定轮次调用模型；未设置时，每个活动轮次均可能调用 |
+| `action_kind` | 不限定 | 设置为 message 或 final_answer 时启用严格动作解析 |
+| `target` | null | 严格解析时要求的接收者；message 的 null 表示广播，final_answer 不指定接收者 |
+
+未设置 `action_kind` 时，`target` 不构成路由约束，实际目标由模型动作决定；
+通信拓扑仍会限制消息可达范围。精确控制实验步骤时，应同时设置动作类型、目标和活动轮次。
 
 凭证优先级为：Python `environment` 显式覆盖 > 已有进程环境 > 工作区 `.env`。
-读取文件不会修改 `os.environ`。旧 `DEEPSEEK_MODEL` 和测试开关不再控制框架运行。
+读取文件不会修改 `os.environ`。配置仅保存环境变量名，密钥值通过受限资源接口注入模型客户端。
 
 ## 使用核心隐写
 
 `core.stegokit` 将 StegoKit 接入统一 `StegoCodec` 契约。
-发送策略获得私有比特，接收策略只从实际收到的公开文本解码，不暗传编码端 token ID。
+发送策略读取自己授权的私有比特，生成公开文本；接收策略根据实际收到的文本与预共享材料解码。
+编码端 token ID 和研究元数据不作为额外传输通道。
 
 以下为本地模型配置结构。使用前准备模型、初始化子模块并安装 `.[stego]`，
 将 `model_path` 改为模型的绝对路径。配置能通过预检不等于模型和 tokenizer 一定兼容算法。
+
+在 `configs/stego.yaml` 中配置：
 
 ```yaml
 schema_version: "1"
@@ -332,6 +427,15 @@ evaluators:
   - type: core.stego_metrics
 ```
 
+```shell
+python -m stegopot validate stego
+python -m stegopot doctor stego
+python -m stegopot run stego
+```
+
+`doctor` 检查依赖安装信息、供应商源码和常见模型文件布局，不下载模型或执行推理。
+实际编码能力还取决于模型、tokenizer、算法参数与载体长度；运行前应准备足够的内存或计算资源。
+
 `generation` 约束本地生成；`encode_config` 和 `decode_config` 可传入算法配置。
 发送节点默认第 0 轮编码，接收节点默认第 1 轮解码；可通过 `active_round` 调整。
 基础接收策略要求单一载体，多消息协议应实现自己的策略。
@@ -340,9 +444,13 @@ evaluators:
 适配器会检查文本与 token 的往返一致性，不满足时明确失败。
 框架仅加载本地模型，禁用自动下载及远程模型代码。
 
-**Chat Completions API 与本地隐写模型不能相互替代。**
-前者提供文本响应，后者通常需要 token 级概率。
-`core.codec_sender/receiver` 是工具策略，不是 LLM 自主选择工具或自发共谋的证据。
+`core.stego_metrics` 根据中央 `truth.secret_bits` 和接收节点的最终答案计算
+`payload_recovered`、`expected_bits`、`received_bits` 与 `bit_error_rate`。
+汇总恢复率以全部计划试验为分母，只有完成且完整恢复载荷的试验计入成功数。
+
+**Chat Completions API 与本地隐写模型用途不同。**
+前者返回文本响应，StegoKit 编解码通常需要本地模型的 token 级概率。
+`core.codec_sender/receiver` 按配置调用工具，评价的是比特传输，不代表模型自主形成了隐写协议。
 
 ## 配置与命令约定
 
@@ -382,17 +490,31 @@ config:
 每个节点必填 `id`、`policy`，可选 `role`。
 默认环境为 `core.communication`，默认 2 轮、1 次试验。
 
-默认预算为 64 次模型调用、每次最多 1024 输出 token、100 轮、1000 次试验、3600 秒。
-另默认限制 256 次工具调用、单条消息 65536 字节、单个上下文 1000000 字节、
-累计已报告 token 1000000；每节点和每试验的调用上限默认不额外设置。
+解析器拒绝未知字段、重复键、YAML 锚点/别名、对象构造标签和大于 2 MB 的配置。
+不执行配置中的 Python 表达式，不进行任意环境变量插值。
+
+### 运行限制
+
+| `runtime` 参数 | 默认值 | 控制范围 |
+| --- | --- | --- |
+| `max_model_calls` | 64 | 整组模型调用次数 |
+| `max_tool_calls` | 256 | 整组 codec 编码与解码调用次数 |
+| `max_output_tokens` | 1024 | 每次模型请求的最大输出 token |
+| `max_total_tokens` | 1000000 | 服务端已报告的累计 token |
+| `max_message_bytes` | 65536 | 单条正文的 UTF-8 字节数 |
+| `max_context_bytes` | 1000000 | 单次上下文的 JSON UTF-8 字节数 |
+| `max_rounds` | 100 | 每次试验允许的计划轮数 |
+| `max_trials` | 1000 | 计划试验总数 |
+| `max_seconds` | 3600 | 执行阶段的协作式截止秒数 |
+
+还可设置 `max_model_calls_per_trial`、`max_model_calls_per_node`、
+`max_tool_calls_per_trial`、`max_tool_calls_per_node`；默认不额外限制局部调用次数。
+节点额度按试验独立计算，中央评价资源只使用全局额度。
 `runtime.max_rounds` 是上限，真正的轮数由场景决定。
 时间和取消在节点、轮次、模型/工具、环境及评价等边界检查，不强制中断正在执行的插件。
 一次 codec 编码或解码计为一次工具调用，不计入 LLM 调用次数；载体超限会失败，不自动截断。
 累计 token 依赖服务端报告，缺失用量单独计数，不能作为硬费用上限。
 全部参数、停止语义和调用示例见 [内核控制与审计](docs/kernel.md)。
-
-解析器拒绝未知字段、重复键、YAML 锚点/别名、对象构造标签和大于 2 MB 的配置。
-不执行配置中的 Python 表达式，不进行任意环境变量插值。
 
 ### 文件与路径
 
@@ -402,7 +524,7 @@ config:
 - 相对配置路径和 `--output`、`--env-file` 以工作区为基准；绝对路径保持原义。
 - 指定外部配置不会改变工作区、默认凭证和输出目录。
 - 框架不猜测第三方参数是否表示文件路径；内置 StegoKit 的模型路径应写为绝对路径。
-- 本仓库默认忽略用户 YAML/JSON 配置及结果；公开研究配置前应自行审查并选择版本控制范围。
+- 本仓库仅跟踪 `configs/README.md`，用户配置及结果默认被忽略；公开研究材料前应审查其中的私有数据。
 
 ### 命令与退出码
 
@@ -457,8 +579,8 @@ report, directory = run_experiment(
 )
 ```
 
-`run_experiment` 是较低层入口，不自动继承工作区路径；示例明确传入结果目录，
-不要为同一次运行先调用它再调用 `run_file`。
+这两种入口是替代关系：`run_file` 完成文件准备与执行，`run_experiment` 执行已经准备的计划。
+后者不自动继承工作区路径，应显式指定结果目录。
 
 | 参数 | 适用入口 | 调用约定 |
 | --- | --- | --- |
@@ -489,14 +611,14 @@ action, next_state = policy.step(observation=observation, prev_state=state)
 ```
 
 `AgentNode` 保存节点身份和策略状态；`Policy` 只负责决策。
-实现 step 时须保留 observation、prev_state 两个参数名，宿主按关键字传入。
+实现 `step` 时须保留 `observation`、`prev_state` 两个参数名，宿主按关键字传入。
 观察包含任务、当前轮次、自身身份、出入邻居、收件箱、上一动作、共享上下文及局部环境。
 
 | 约定 | 行为 |
 | --- | --- |
 | 轮次 | 从 0 开始，同轮产生的消息在下一轮进入收件箱 |
 | 消息方向 | 只能发给出邻居；向一个节点定向发送用其 ID |
-| 广播 | message 的 target 为 null 或 `*` 时广播给出邻居，不是向全局所有节点发送 |
+| 广播 | message 的 target 为 null、`*`、`broadcast` 或 `all` 时广播给出邻居，不向无边节点发送 |
 | 最终答案 | final_answer 写入该节点结果，不作为消息投递给其他节点 |
 | 标准试验 | 由计划轮数调度；单个节点给出 final_answer 不代表整组实验立即结束 |
 | 状态 | 初始状态属于本次节点运行，不隐式共享其他节点的内部状态 |
@@ -510,14 +632,13 @@ LLM 通过 JSON 表达相同动作，例如：
 动作类型为 `message`、`wait`、`final_answer`。
 启用 `action_kind` 时使用严格解析，要求且仅允许上述四个字段，
 动作类型与目标必须匹配，正文必须非空，metadata 必须为 `{}`。
-普通策略使用的宽松解析与该严格模式不同，不能把两者的失败处理混为一谈。
+未设置 `action_kind` 的 `core.llm` 使用宽松解析；格式处理规则不同，精确协议实验应显式选择严格模式。
 标准公开消息管线会剥离动作元数据，防止把它当作额外隐蔽通道。
 
 ## 组件接口约定
 
 所有公开契约集中在 [domain/interface](stegopot/domain/interface)。
-抽象类用于约束行为，并不表示要实例化抽象类；工厂返回满足契约的具体实现。
-部分接口使用 Protocol，宿主也检查关键方法与结果类型。
+接口通过抽象类或 Protocol 描述组件行为，工厂提供具体实现；宿主检查关键方法与返回类型。
 
 | kind | 主要调用 | 返回与责任 |
 | --- | --- | --- |
@@ -544,7 +665,7 @@ LLM 通过 JSON 表达相同动作，例如：
 - codec 的 research 字段是研究材料，不得附加到公开消息中。
 
 场景可通过 `ReplaySpec` 引用前序试验的唯一实际投递正文。
-源试验失败或载体不唯一时跳过，不用重新生成的正文冒充配对对照。
+源试验失败或载体不唯一时，对应重放试验标记为跳过；重放不会调用模型重新生成替代载体。
 
 ### 生命周期与所有权
 
@@ -686,12 +807,12 @@ rewards:
 组件不得绕过注入自行读取其他节点数据、重复关闭依赖或修改宿主全局注册表。
 重复 ID、版本不兼容、错误资源类型和未知参数都会被拒绝。
 在进程内注入 PluginCatalog 时由调用方完成注册；CLI 则依据安装元数据与配置允许列表发现插件。
-API 1.1 保持对 1.0 插件声明的兼容，旧插件可以不声明预检钩子。
+插件 API 1.1 接受兼容的 1.0 声明，`preflight` 为可选钩子。
 预检不得联网、修改全局状态或把节点私有材料写入诊断；示例见 [内核接口说明](docs/kernel.md#扩展预检)。
 
 ## 结果与审计
 
-每次运行创建新目录，默认不会覆盖之前的结果：
+每次运行创建独立目录，不覆盖已有运行结果：
 
 ```text
 outputs/<run-id>/
@@ -710,7 +831,7 @@ outputs/<run-id>/
 
 结果契约为 `stegopot.report/1`。报告包含 `trials`、`summary`、`errors`、
 `status`，以及模型调用数、实际型号、服务端返回的用量和耗时。
-新增 `execution` 保存调用计数、已报告 token、未知用量次数和全局停止原因。
+`execution` 保存调用计数、已报告 token、未知用量次数和全局停止原因。
 缺少服务端用量不等于真实零费用；完成运行也不等于完成研究目标。
 
 `completed` 表示正常完成；`failed` 表示存在失败；
@@ -751,46 +872,28 @@ Get-FileHash -LiteralPath "outputs/<run-id>/seal.json" -Algorithm SHA256
 
 ## 边界与常见问题
 
-**没有配置时为什么不能直接运行？**
+### 能力边界
 
-框架不预置研究任务。先编写 configs 中的配置；本 README 的代码块用于说明格式，不会自动生成文件。
+- 调度采用单进程同步轮次，不提供分布式执行、断点恢复或运行中模块热重载。
+- 奖励接口计算反馈，不包含强化学习训练循环、权重更新或自动协议演化。
+- 核心提供固定 codec 工具策略，不包含通用 LLM 自主工具规划器；复杂决策可通过 policy 扩展。
+- 插件在宿主进程中执行，应仅安装和启用受信任代码。数据投影和资源注入不等于操作系统安全沙箱。
+- 预检与 doctor 是运行前检查，不保证远程服务可用或本地模型实际兼容；取消与预算也不是硬进程隔离。
+- 框架记录实验过程，不预设研究结论。显式共享协议、工具辅助传输和模型自主形成协议应分别定义和评价。
 
-**可以只改配置实现任何实验吗？**
+### 常见问题处理
 
-配置可以组合已有组件，不能凭空实现新算法。新的场景、策略、协议或评价需要插件代码。
+| 现象 | 检查方式 |
+| --- | --- |
+| 找不到配置或无法自动选择 | 用 list 检查当前工作区；创建配置后显式指定名称，必要时传入 --workspace |
+| 插件或组件不可用 | 确认插件安装在当前解释器，entry point 和版本正确，并在配置 plugins 中显式启用 |
+| 消息未到达接收者 | 检查有向边、动作目标、活动轮次及信道阻断；最后一轮发送的消息没有后续轮次读取 |
+| 模型返回 protocol_error | 查看研究日志中的实际响应，核对 action_kind、target、四字段 JSON 和服务端格式支持 |
+| doctor 通过但本地编码失败 | 检查具体异常、模型架构、tokenizer 往返一致性、算法参数和可用资源；静态文件检查不代替推理验收 |
+| 已按 Ctrl+C 但尚未退出 | 首次中断请求协作停止；在途调用须返回或超时，第二次中断可能留下未封印结果 |
+| verify 无法核验结果 | 检查是否强制中断、写盘失败或文件被修改；仅调查时使用 events --unverified，并保留原始目录 |
 
-**有奖励接口，是否已经实现强化学习？**
-
-没有。当前只计算和投影反馈，不提供训练循环、模型权重更新或自动协议演化。
-
-**是否已经证明模型自发隐写或共谋？**
-
-没有。框架提供实验能力，不预设结论。工具恢复比特、人工共享协议和 LLM 自发行为必须区分。
-
-**LLM 能否自动调用任意工具？**
-
-当前核心没有通用自主工具规划器。`core.codec_sender/receiver` 是固定工具策略；
-更复杂的模型与工具协作应通过 policy 接口开发。
-
-**热插拔发生在什么时候？**
-
-两次实验之间通过配置启停、替换组件。更换已安装代码后应启动新进程，
-不支持执行过程中热重载 Python 模块，也不自动执行某个目录里的任意脚本。
-
-**插件是否被安全隔离？**
-
-不是。插件是与宿主同进程运行的可信 Python 代码，仍具有宿主进程权限。
-接口可见性不等于操作系统沙箱或针对恶意插件的安全保证。
-
-**旧的 DeepSeek 扩展和实验命令还能用吗？**
-
-0.7 已移除旧专用扩展和实验目录。模型资源使用 `core.chat_completions`，
-运行统一使用 `python -m stegopot run`。不要继续引用旧 examples、experiments 或 Console 路径。
-
-**为什么安装后又出现 egg-info？**
-
-这是打包工具可能重新生成的元数据。删除不等于禁用框架，但下一次安装可能重建；
-不修改它，也不将它作为业务目录或提交内容。
+插件更换通过两次运行之间调整配置完成；更新已安装插件代码后应启动新进程。
 
 ## 开发规范与许可
 
@@ -798,11 +901,10 @@ Get-FileHash -LiteralPath "outputs/<run-id>/seal.json" -Algorithm SHA256
 与 [架构说明](docs/architecture.md)。更多使用细节见 [配置指南](docs/usage.md)，
 扩展说明见 [接口开发指南](docs/plugin_development.md)，执行和审计接口见 [内核指南](docs/kernel.md)。
 
-框架修改应在临时工作区验证配置、拓扑隔离、资源注入、失败记录、审计封印和独立安装。
-测试文件仅保留在开发者本地，由 `.gitignore` 排除，不上传 GitHub，也不随安装包分发。
-本地具备 `tests/contracts` 时，可运行 `python -m unittest discover -s tests/contracts -q` 检查内核契约。
-测试使用临时目录并拒绝网络连接；下载公开仓库不包含此测试集，第三方插件应自行维护对应测试。
-默认不运行付费 API，真实模型实验需要由使用者明确选择。
+开发时应保持接口与实现分离，使用类型注解和中文参数说明，并明确资源所有权、失败处理和数据可见性。
+新增能力应同步更新参数模式和文档，在隔离工作区验证配置、拓扑、资源释放、审计及独立安装。
+公开仓库不分发测试文件、用户配置或实验结果；插件开发者应在自己的项目中维护契约和集成验证。
+真实模型验收应显式准备凭证、预算与计算资源，公开结果前应审查私有材料及授权范围。
 
 核心采用 [Apache-2.0](LICENSE)。StegoKit 保留
 [上游许可证](stegopot/infrastructure/vendor/stego-kit/LICENSE) 及固定版本源码；
