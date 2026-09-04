@@ -9,6 +9,7 @@ from stegopot.application.engine import AgentNode
 from stegopot.application.engine import MultiAgentRuntime
 from stegopot.application.engine import RuntimeConfig
 from stegopot.domain.model import AgentTopology
+from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.interface import LLMClient
 from stegopot.domain.interface import ObservationBuilder
 from stegopot.domain.interface import Policy
@@ -151,6 +152,7 @@ class MultiAgentBuilder:
       config: RuntimeConfig | None = None,
       observation_builder: ObservationBuilder | None = None,
       substrate: Substrate | None = None,
+      audit_sink: AuditSink | None = None,
   ) -> MultiAgentRuntime:
     """构建一个可执行的多智能体运行器。
 
@@ -158,6 +160,7 @@ class MultiAgentBuilder:
       config: 轮数、终止和错误处理配置。
       observation_builder: 自定义局部观察构造器。
       substrate: 自定义环境规则；为空时使用透明通信环境。
+      audit_sink: 可选审计接收器，不传入时保持原有运行行为。
 
     返回：
       持有节点与拓扑副本的 MultiAgentRuntime。
@@ -168,4 +171,5 @@ class MultiAgentBuilder:
         config=config,
         observation_builder=observation_builder,
         substrate=substrate or CommunicationSubstrate(),
+        audit_sink=audit_sink,
     )

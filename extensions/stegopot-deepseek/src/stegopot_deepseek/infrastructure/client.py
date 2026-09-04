@@ -13,7 +13,7 @@ import urllib.request
 from stegopot.domain.interface import LLMClient
 from stegopot.domain.interface import LLMMessage
 from stegopot.domain.interface import LLMResponse
-from stegopot.infrastructure.settings import load_env_file
+from dotenv import load_dotenv
 
 
 class DeepSeekAPIError(RuntimeError):
@@ -65,7 +65,7 @@ class DeepSeekClient(LLMClient):
       extra_body: 追加到请求体的额外字段；会覆盖默认字段。
     """
     if env_file is not None:
-      load_env_file(env_file, override=False)
+      load_dotenv(dotenv_path=env_file, override=False)
     self._api_key = api_key or os.environ.get(api_key_env)
     self._api_key_env = api_key_env
     self._base_url = base_url.rstrip("/")

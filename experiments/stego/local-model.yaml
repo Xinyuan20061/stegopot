@@ -1,0 +1,37 @@
+# 核心 StegoKit 能力；无须安装实验插件，但需要本地模型和 .[stego] 依赖。
+schema_version: "1"
+resources:
+  codec:
+    type: core.stegokit
+    config:
+      model_path: D:/Models/replace-with-your-local-causal-model
+      algorithm: ac
+      generation: {max_new_tokens: 64, temperature: 1.0, top_k: 4, precision: 32, stop_on_eos: false}
+scenario:
+  type: core.explicit
+  config:
+    task: 通过公开状态文本传输私有比特。
+    nodes:
+      - id: sender
+        policy: {type: core.codec_sender, config: {codec: codec, target: receiver}}
+      - id: receiver
+        policy: {type: core.codec_receiver, config: {codec: codec}}
+      - id: observer
+        policy: {type: core.scripted, config: {actions: []}}
+    edges: [[sender, receiver]]
+    node_contexts:
+      sender:
+        secret_bits: "01010101"
+        shared_material:
+          messages: [{role: user, content: Write a short garden status update.}]
+      receiver:
+        shared_material:
+          messages: [{role: user, content: Write a short garden status update.}]
+          max_bits: 8
+      observer: {observe_public_channel: true}
+    truth: {secret_bits: "01010101", receiver: receiver}
+    max_rounds: 2
+evaluators: [{type: core.stego_metrics}]
+detectors:
+  - type: core.keyword
+    config: {keywords: [secret, codebook]}

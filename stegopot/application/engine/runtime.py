@@ -21,6 +21,7 @@ from stegopot.domain.interface import Substrate
 from stegopot.domain.interface import SubstrateEvent
 from stegopot.domain.interface import SubstrateResetContext
 from stegopot.domain.interface import SubstrateStepContext
+from stegopot.domain.interface.audit import AuditSink
 
 TerminationMode = Literal["max_rounds", "any_final", "all_final"]
 
@@ -212,6 +213,7 @@ class MultiAgentRuntime:
       config: RuntimeConfig | None = None,
       observation_builder: ObservationBuilder | None = None,
       substrate: Substrate,
+      audit_sink: AuditSink | None = None,
   ) -> None:
     """初始化多智能体运行器。
 
@@ -221,6 +223,7 @@ class MultiAgentRuntime:
       config: 轮数、终止和错误处理配置。
       observation_builder: 自定义局部观察构造器；为空时使用默认实现。
       substrate: 已由应用层注入的环境规则实现。
+      audit_sink: 可选审计接收器；写入失败中止运行，避免无记录执行。
     """
     self._nodes = dict(nodes)
     self._topology = topology.copy()
@@ -229,6 +232,7 @@ class MultiAgentRuntime:
         observation_builder or DefaultObservationBuilder()
     )
     self._substrate = substrate
+    self._audit_sink = audit_sink
     self._validate_nodes()
     self._router = MessageRouter(self._topology)
 
@@ -238,6 +242,36 @@ class MultiAgentRuntime:
     return self._topology.copy()
 
   def run(
+      self,
+      task: str,
+      *,
+      shared_context: Mapping[str, Any] | None = None,
+  ) -> RunResult:
+    """执行实验并记录开始、完成或异常，不改变原同步调度语义。
+
+    参数：
+      task: 全部节点可见的任务文本，不应含节点私有信息。
+      shared_context: 对全部节点公开的背景；私有信息应由环境逐节点提供。
+
+    返回：
+      完整运行结果；失败时保留已产生的审计事件并向调用者抛出异常。
+    """
+    self._audit("runtime.started", data={
+        "task": task, "topology": self._topology.to_dict(),
+        "config": dataclasses.asdict(self._config),
+        "shared_context": dict(shared_context or {}),
+    })
+    try:
+      result = self._run(task, shared_context=shared_context)
+    except Exception as exc:
+      self._audit("runtime.failed", data={
+          "error_type": type(exc).__name__, "error": str(exc),
+      })
+      raise
+    self._audit("runtime.completed", data=result.to_dict())
+    return result
+
+  def _run(
       self,
       task: str,
       *,
@@ -299,7 +333,11 @@ class MultiAgentRuntime:
             inbox=tuple(inboxes[node_id]),
             previous_action=previous_actions[node_id],
         ))
+        self._audit("runtime.observation", actor=node_id,
+                    round_index=round_index, data={"observation": observation})
         action, error = self._execute_node(node, observation)
+        self._audit("runtime.action", actor=node_id, round_index=round_index,
+                    data={"action": _action_to_dict(action), "error": error})
         actions[node_id] = action
         previous_actions[node_id] = action
         step_records.append(NodeStepRecord(
@@ -321,6 +359,8 @@ class MultiAgentRuntime:
               round_index=round_index,
           )
         except MessageRoutingError as exc:
+          self._audit("runtime.route_rejected", actor=sender,
+                      round_index=round_index, data={"error": str(exc)})
           if self._config.strict_routing:
             raise
           routing_errors.append(str(exc))
@@ -332,6 +372,12 @@ class MultiAgentRuntime:
           actions=actions,
           messages=tuple(candidate_messages),
       ))
+      self._audit("runtime.substrate", round_index=round_index, data={
+          "candidate_messages": [message.to_dict() for message in candidate_messages],
+          "events": [event.to_dict() for event in substrate_result.events],
+          "rewards": dict(substrate_result.rewards),
+          "info": dict(substrate_result.info),
+      })
       next_inboxes: dict[str, list[AgentMessage]] = {
           node_id: [] for node_id in self._topology.nodes
       }
@@ -343,6 +389,8 @@ class MultiAgentRuntime:
           )
         next_inboxes[message.recipient].append(message)
         transcript.append(message)
+        self._audit("runtime.message", actor=message.sender,
+                    round_index=round_index, data={"message": message.to_dict()})
       unknown_reward_nodes = set(substrate_result.rewards) - set(self._nodes)
       if unknown_reward_nodes:
         raise ValueError(
@@ -391,6 +439,24 @@ class MultiAgentRuntime:
     for node in self._nodes.values():
       node.close()
     self._substrate.close()
+
+  def _audit(
+      self, kind: str, *, data: Mapping[str, Any],
+      actor: str | None = None, round_index: int | None = None,
+  ) -> None:
+    """向注入的接收器发送事件；不捕获存储失败。
+
+    参数：
+      kind: 稳定事件类型。
+      data: 研究视角的事件内容；公开投影由记录器白名单控制。
+      actor: 关联节点，没有时为 None。
+      round_index: 关联轮次，没有时为 None。
+    """
+    if self._audit_sink is not None:
+      self._audit_sink.emit({
+          "kind": kind, "actor": actor, "round_index": round_index,
+          "data": dict(data),
+      })
 
   def _validate_nodes(self) -> None:
     """验证节点映射和拓扑完全对应。"""

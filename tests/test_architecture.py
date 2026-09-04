@@ -33,7 +33,8 @@ ALLOWED_PROJECT_DEPENDENCIES = {
         "domain.model",
     },
     "infrastructure": set(),
-    "infrastructure.settings": {"infrastructure.settings"},
+    "infrastructure.settings": {"infrastructure.settings", "domain.model"},
+    "infrastructure.plugins": {"infrastructure.plugins", "domain.interface", "domain.model"},
     "infrastructure.llm": {
         "domain.interface",
         "domain.model",
@@ -65,6 +66,7 @@ ALLOWED_PROJECT_DEPENDENCIES = {
         "domain.model",
         "infrastructure.integrations",
         "infrastructure.detectors",
+        "infrastructure.plugins",
         "infrastructure.llm",
         "infrastructure.recorders",
         "infrastructure.settings",
@@ -75,6 +77,27 @@ ALLOWED_PROJECT_DEPENDENCIES = {
 
 class ArchitectureBoundaryTest(unittest.TestCase):
   """防止低层反向依赖高层或重新产生平级技术包。"""
+
+  def test_core_does_not_import_extensions(self):
+    """核心不依赖实验包；扩展不依赖核心非公开运行区域。"""
+    for path in PACKAGE_ROOT.rglob('*.py'):
+      if 'vendor' in path.parts:
+        continue
+      tree = ast.parse(path.read_text(encoding='utf-8'))
+      for node in ast.walk(tree):
+        names = [node.module] if isinstance(node, ast.ImportFrom) and node.module else (
+            [item.name for item in node.names] if isinstance(node, ast.Import) else [])
+        self.assertFalse(any(name.startswith('stegopot_') for name in names), str(path))
+    for path in (PACKAGE_ROOT.parent / 'extensions').rglob('*.py'):
+      if 'vendor' in path.parts:
+        continue
+      tree = ast.parse(path.read_text(encoding='utf-8'))
+      for node in ast.walk(tree):
+        names = [node.module] if isinstance(node, ast.ImportFrom) and node.module else (
+            [item.name for item in node.names] if isinstance(node, ast.Import) else [])
+        for name in names:
+          if name.startswith('stegopot.'):
+            self.assertTrue(name.startswith('stegopot.domain.'), f'{path}: {name}')
 
   def test_only_logical_layers_live_at_package_root(self) -> None:
     """验证包根目录只包含四个逻辑层目录。"""
@@ -134,6 +157,28 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         if path.is_dir() and path.name in forbidden_names
     )
     self.assertEqual(existing, [])
+
+  def test_collusion_and_audit_have_separate_feature_boundaries(self) -> None:
+    """共谋用例、信道、提示和持久化按职责分目录，审计契约集中到领域层。"""
+    expected = {
+        "domain/interface/audit.py": "domain.interface",
+        "domain/interface/registration.py": "domain.interface",
+        "domain/model/experiment.py": "domain.model",
+        "application/services/experiments/runner.py": "application.services",
+        "infrastructure/integrations/stegokit/codec.py": "infrastructure.integrations",
+        "infrastructure/recorders/audit/journal.py": "infrastructure.recorders",
+        "bootstrap/experiments/run.py": "bootstrap",
+    }
+    for name, scope in expected.items():
+      with self.subTest(path=name):
+        path = PACKAGE_ROOT / name
+        self.assertTrue(path.is_file())
+        self.assertEqual(_source_scope(path), scope)
+    # 强制继续使用构造注入的接口，禁止运行器绑定文件记录器。
+    runtime = PACKAGE_ROOT / "application/engine/runtime.py"
+    dependencies = _project_dependencies(runtime)
+    self.assertIn("domain.interface", dependencies)
+    self.assertNotIn("infrastructure.recorders", dependencies)
 
 
 def _source_scope(path: Path) -> str | None:

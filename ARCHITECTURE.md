@@ -1,348 +1,126 @@
-# StegoPot 架构说明
+# StegoPot 架构
 
-本文档定义 StegoPot Python 业务包的四层目录、仓库级展示子项目、依赖方向、
-运行调用链和扩展规则。
-`tests/test_architecture.py` 会自动验证这些约束。
+## 定位与边界
 
-## 核心约束
+这是多 Agent 隐写实验框架，而不是没有领域特征的任务调度器。
+StegoKit、隐写契约、消息隔离、基础检测与审计属于核心；
+专用共谋协议、论文场景、实验提示与专用评分属于扩展。
+所有 ABC/Protocol 集中在 `stegopot/domain/interface`。
 
-1. Python 包目录 `stegopot/` 只允许存在 `domain`、`application`、
-   `infrastructure` 和 `bootstrap` 四个逻辑层。
-2. 抽象接口和稳定模型属于最内层，不能依赖运行器或具体实现。
-3. 应用层和基础设施层相互独立，通过领域接口协作。
-4. 只有启动层负责选择并组装具体实现。
-5. 复杂能力使用独立功能目录，例如 `infrastructure/substrates/stego/`。
-6. 依赖只能由外层指向内层，禁止循环和反向依赖。
-
-## 目录结构
+## 四层目录
 
 ```text
-仓库根目录/
-├── stegopot/                            # Python 四层业务包
-│   ├── domain/                          # L0：稳定内核
-│   │   ├── model/                       # 纯数据与领域规则
-│   │   │   ├── action.py
-│   │   │   ├── detection.py
-│   │   │   ├── message.py
-│   │   │   └── topology.py
-│   │   └── interface/                   # ABC、Protocol 与能力契约
-│   │       ├── policy.py
-│   │       ├── detector.py
-│   │       ├── llm.py
-│   │       ├── observation.py
-│   │       ├── substrate.py
-│   │       └── stego.py
-│   ├── application/                     # L1：框架运行与应用服务
-│   │   ├── engine/
-│   │   │   ├── agent.py
-│   │   │   ├── observation.py
-│   │   │   ├── router.py
-│   │   │   └── runtime.py
-│   │   └── services/
-│   │       ├── evaluation.py
-│   │       └── experiment.py
-│   ├── infrastructure/                  # L2：具体实现和技术细节
-│   │   ├── detectors/
-│   │   │   ├── keyword.py
-│   │   │   ├── llm.py
-│   │   │   ├── mock.py
-│   │   │   └── perplexity.py
-│   │   ├── llm/
-│   │   │   ├── clients/
-│   │   │   │   ├── deepseek.py
-│   │   │   │   └── mock.py
-│   │   │   ├── action_parser.py
-│   │   │   ├── policy.py
-│   │   │   └── prompt.py
-│   │   ├── substrates/
-│   │   │   ├── communication.py
-│   │   │   ├── detection/
-│   │   │   │   └── substrate.py
-│   │   │   └── stego/
-│   │   │       └── substrate.py
-│   │   ├── integrations/
-│   │   │   └── stegokit/
-│   │   │       ├── adapter.py
-│   │   │       └── loader.py
-│   │   ├── settings/
-│   │   │   └── env.py
-│   │   ├── recorders/
-│   │   │   └── json.py
-│   │   └── vendor/
-│   │       └── stego-kit/               # 上游 Git 子模块
-│   └── bootstrap/                       # L3：组合根
-│       ├── builder.py
-│       └── detection.py
-└── stegopot-console/                    # 独立展示子项目
-    ├── backend/                         # 报告脱敏投影与 HTTP API
-    ├── frontend/                        # React 实验工作台
-    └── contracts/                       # 版本化 JSON Schema
+stegopot/
+├── domain/
+│   ├── interface/
+│   │   ├── policy.py / llm.py           决策与模型
+│   │   ├── substrate.py / channel.py   环境与正文干预
+│   │   ├── codec.py / stego.py         新载体契约与兼容工具契约
+│   │   ├── detector.py / audit.py      检测与审计
+│   │   ├── experiment.py               场景、奖励、中央评价
+│   │   └── plugin.py / registration.py 声明、上下文与装饰器
+│   └── model/                         消息、拓扑、动作、实验计划
+├── application/
+│   ├── engine/                        节点、路由、轮次、环境管线
+│   └── services/experiments/           显式场景、统一执行与通用评分
+├── infrastructure/
+│   ├── integrations/stegokit/         核心 StegoKit 适配与载体编解码
+│   ├── vendor/stego-kit/               固定上游子模块
+│   ├── llm/                           策略、提示、解析、模型/工具审计
+│   ├── substrates/                    通信和兼容环境实现
+│   ├── detectors/                     基础检测实现
+│   ├── plugins/                       安装元数据发现、版本与模式校验
+│   ├── settings/                      配置文件与环境变量读取
+│   └── recorders/audit/                双日志、投影、封印、标准报告
+└── bootstrap/experiments/             预检、组件组装、资源所有权、CLI
+extensions/
+├── stegopot-collusion/src/stegopot_collusion/
+│   ├── domain/model/                  实验条件
+│   ├── application/services/          场景计划与专用评价
+│   ├── infrastructure/                角色策略、提示、信道
+│   └── bootstrap/                     entry point
+└── stegopot-deepseek/src/stegopot_deepseek/
+    ├── infrastructure/                供应商 HTTP 实现
+    └── bootstrap/                     entry point
 ```
 
-## 仓库级展示子项目
+空层不必创建，复杂功能必须在对应层中继续按职责分目录。
+扩展只能导入核心公开 `domain` 契约，不能导入内核运行器或具体基础设施；
+场景通过组件 ID 引用核心能力，不通过导入隐藏耦合。
 
-`stegopot-console/` 不属于 Python 业务包的第五层，也不参与运行时对象组装。
-它通过文件边界读取 `ExperimentReport` JSON，再由后端投影成稳定、脱敏的
-`ExperimentView` 契约。前端只消费 HTTP JSON。
+## 调用关系
 
 ```text
-StegoPot Runtime -> ExperimentReport JSON -> Console Backend -> Console Frontend
+CLI
+ -> load_config -> prepare_experiment
+ -> PluginCatalog（显式允许列表、API 与配置校验）
+ -> ScenarioProvider.plan -> ExperimentPlan / TrialSpec
+ -> ComponentSession（按声明注入模型、codec、凭证和审计）
+ -> run_plan -> execute_trial -> MultiAgentRuntime
+      -> Substrate.observe -> 节点局部观察 -> Policy.step
+      -> 路由候选消息 -> ExperimentPipeline
+           -> 环境处理 -> 身份检查 -> 清除元数据
+           -> ChannelTransform -> StegoDetector -> RewardFunction
+      -> 最终正文进入下一轮 inbox
+ -> Evaluator（仅中央阶段接收 trial.truth）
+ -> 宿主 AuditJournal -> 标准报告与关联封印
 ```
 
-- Console 后端不得导入 `stegopot` Python 包。
-- 完整研究报告不得直接返回浏览器，必须经过投影器。
-- 公开视图不得包含秘密比特、解码比特、逐消息真值或原始观察。
-- 前端不得引用 Python 源码、业务实体或内部报告对象。
-
-## 四层职责
-
-### L0：Domain
-
-`domain/model` 保存 `AgentAction`、`AgentMessage`、`AgentTopology`、
-`DetectionRequest` 和 `DetectionResult` 等稳定领域对象。它只依赖 Python
-标准库。
-
-`domain/interface` 集中保存所有可替换能力的抽象契约：
-
-- `Policy`
-- `LLMClient`
-- `ObservationBuilder`
-- `Substrate`
-- `StegoTool`
-- `StegoDetector`
-
-接口所需的请求、结果和上下文与接口放在同一文件中。该区域只能依赖
-`domain/model`，不能导入应用层或基础设施实现。
-
-### L1：Application
-
-`application/engine` 实现节点状态、消息路由、默认观察和同步轮次调度。
-它只认识领域模型和抽象接口，不知道 DeepSeek、StegoKit 或具体 Substrate。
-
-`application/services` 存放完整应用用例，例如运行场景、计算检测和隐写
-指标并生成 `ExperimentReport`。应用服务可以调用 Engine，但不能选择
-基础设施实现或直接写入特定存储。
-
-### L2：Infrastructure
-
-基础设施层提供领域接口的具体实现：
-
-- `llm`：LLMPolicy、提示构造、动作解析和模型供应商客户端。
-- `detectors`：Mock、关键词、困惑度和 LLM 等检测器实现。
-- `substrates`：通信、隐写、检测装饰器及未来环境规则。
-- `integrations`：把第三方 API 映射到稳定接口。
-- `recorders`：JSON、数据库等实验报告持久化实现。
-- `settings`：环境变量等技术配置读取。
-- `vendor`：必须固定版本的上游源码。
-
-基础设施层不得导入应用层。不同基础设施功能之间也应通过领域接口协作；
-例如 `SteganographySubstrate` 依赖 `StegoTool`，而不是 `StegoKitAdapter`；
-`DetectionSubstrate` 依赖 `StegoDetector`，而不是某个具体检测器。
-
-### L3：Bootstrap
-
-`bootstrap` 是组合根。它可以同时导入 Engine 和具体基础设施实现，负责：
-
-- 创建节点和拓扑；
-- 为接口选择默认实现；
-- 注入 Policy、ObservationBuilder 和 Substrate；
-- 返回可运行的 `MultiAgentRuntime`。
-
-`MultiAgentBuilder` 属于这一层。Builder 只负责接线，不实现路由、模型调用或
-隐写算法。
+`Policy` 可以使用注入的 `LLMClient` 或 `StegoCodec`。
+核心 `CodecPolicy` 是工具驱动策略；LLM 的决策与工具输出不得混为一谈。
+新载体接口要求接收端从真实载体解码，旧 `StegoTool` 保留兼容。
 
 ## 依赖方向
 
-```mermaid
-flowchart TB
-    X[examples / tests] --> B[bootstrap]
-    X --> AS[application.services]
-    X --> INF[infrastructure]
-    B --> AE[application.engine]
-    B --> INF
-    B --> DM[domain.model]
-    B --> DI[domain.interface]
-    AS --> AE
-    AE --> DI
-    AE --> DM
-    INF --> DI
-    INF --> DM
-    DI --> DM
-```
-
-允许的项目依赖如下：
-
-| 当前区域 | 可以依赖 |
+| 区域 | 可依赖区域 |
 | --- | --- |
-| `domain.model` | 自身、Python 标准库 |
-| `domain.interface` | `domain.model`、自身 |
-| `application.engine` | `domain.model`、`domain.interface`、自身 |
-| `application.services` | `application.engine`、领域层、自身 |
-| `infrastructure.settings` | 自身、Python 标准库 |
-| `infrastructure.llm` | 领域层、`infrastructure.settings`、自身 |
-| `infrastructure.detectors` | 领域层、自身 |
-| `infrastructure.substrates` | 领域层、自身 |
-| `infrastructure.integrations` | `domain.interface`、自身 |
-| `infrastructure.recorders` | 自身、Python 标准库 |
-| `bootstrap` | 所有层；只能做对象组装 |
+| domain.model | 自身、标准库 |
+| domain.interface | 自身、domain.model、标准库 |
+| application.engine | 自身、domain |
+| application.services | 自身、application.engine、domain |
+| infrastructure.llm | 自身、settings、domain |
+| infrastructure.integrations | 自身、domain.interface |
+| infrastructure.substrates / detectors / plugins | 自身、domain |
+| infrastructure.settings | 自身、domain.model |
+| infrastructure.recorders | 自身、标准库 |
+| bootstrap | 上述所有区域，仅做组装与边界接入 |
 
-## Runtime 调用链
+注册便利类 `Plugin` 只创建声明，不加载模块或运行组件。
+安装发现与 JSON Schema 校验属于基础设施；工厂调用和所有权属于组合根。
 
-```mermaid
-sequenceDiagram
-    participant Boot as MultiAgentBuilder
-    participant Runtime as MultiAgentRuntime
-    participant Env as Substrate
-    participant Obs as ObservationBuilder
-    participant Node as AgentNode
-    participant Policy
-    participant Router as MessageRouter
+## 信息边界
 
-    Boot->>Runtime: build(config, substrate)
-    Runtime->>Env: reset(context)
-    loop 每个同步轮次
-        Runtime->>Env: observe(node_id)
-        Runtime->>Obs: build(context)
-        Obs-->>Runtime: local observation
-        Runtime->>Node: act(observation)
-        Node->>Policy: step(observation, state)
-        Policy-->>Node: AgentAction, next_state
-        Runtime->>Router: route(action)
-        Router-->>Runtime: AgentMessage[]
-        Runtime->>Env: step(actions, messages)
-        Env-->>Runtime: messages, rewards, events
-    end
-    Runtime-->>Boot: RunResult
-```
+- `shared_context` 显式公开，不自动加入种子、计划、编号或真值。
+- `node_contexts[id]` 只投影到该节点的 `environment.framework.private`。
+- `truth` 仅用于中央评价与研究记录。
+- `observe_public_channel` 授权读取最终公开转录，不暴露干预前的内部状态。
+- 信道只能改变正文或阻断，不得改变身份、轮次、目标或增添元数据。
+- 检测请求只有最终公开正文和身份，不含私有材料。
+- 奖励接收轮次转移；当前接口不提供中央真值，节点只看到自身反馈。
+- 模型/codec 资源按试验与节点缓存，构造时只注入已声明槽位。
+- API 凭证只注入声明该环境变量字段的供应商工厂。
 
-同一轮所有节点只能看到上一轮收件箱。Substrate 处理后的消息在下一轮进入
-接收节点观察，节点注册顺序不会改变同轮可见信息。
+这些是可信组件的接口约束，不是抵御恶意 Python 插件的隔离机制。
+插件自身创建网络连接或读取宿主文件不受进程沙箱约束。
 
-## 隐写调用链
+## 生命周期与审计
 
-```mermaid
-flowchart LR
-    P[Policy] -->|AgentAction metadata.stego| R[MessageRouter]
-    R --> SS[infrastructure/substrates/stego]
-    SS -->|StegoTool.embed/extract| A[StegoKitAdapter]
-    A --> V[infrastructure/vendor/stego-kit]
-    SS -->|公共载密文本| M[AgentMessage]
-    SS -->|私有解码结果| O[授权节点环境观察]
-```
+预检阶段场景必须无副作用。执行阶段每次试验使用新会话，资源逆序关闭；
+注入资源归宿主管理，组件不得重复关闭依赖。
+原始模型客户端和 codec 由框架包装，记录请求、响应、异常与实际来源。
+插件的自定义事件强制进入 `plugin.event`，不能伪造公开投递事件。
 
-关键隔离点：
+标准 CLI 强制审计，旧 Builder 保留可选审计以兼容已有嵌入程序。
+审计失败中止执行；意外退出保留未封印记录，不生成虚假的完整报告。
+中央评分只接收实际运行结果，失败不会补写答案。
+源码摘要记录 Python 文件，不涵盖所有外部模型权重和操作系统依赖。
+模型权重、数据集和实验外部材料仍需研究者固定版本。
 
-- Stego Substrate 只依赖 `StegoTool` 接口。
-- StegoKitAdapter 只负责类型映射，不参与路由和权限判断。
-- 只有 StegoKit loader 可以定位 `infrastructure/vendor/stego-kit`。
-- 秘密比特和算法材料不会进入公开 AgentMessage 元数据。
-
-## 检测调用链
-
-```mermaid
-flowchart LR
-    R[MessageRouter] --> SS[SteganographySubstrate]
-    SS -->|过滤私有字段后的公开消息| DS[DetectionSubstrate]
-    DS -->|DetectionRequest| D[StegoDetector]
-    D -->|DetectionResult| DS
-    DS -->|无真实标签| AO[审计节点环境观察]
-    DS -->|含 ground_truth| CE[中央 SubstrateEvent]
-    CE --> EV[application/services/evaluation]
-    EV --> ER[ExperimentReport]
-    ER --> JR[注入的 JSON Recorder]
-```
-
-关键隔离点：
-
-- `DetectionSubstrate` 是装饰器，必须在内部环境完成消息变换后再检测。
-- `DetectionRequest` 只包含公开正文、公开元数据和公开实验上下文。
-- 审计节点只能读取 `DetectionFinding`，其中不包含 `ground_truth`。
-- TP、TN、FP、FN 只根据中央环境事件计算。
-- 记录器只接收可序列化映射，不依赖应用服务或运行器类型。
-
-## 新代码放置规则
-
-### 新增领域模型
-
-放入 `domain/model/`。模型不得包含网络请求、文件系统适配或运行器状态。
-
-### 新增抽象能力
-
-1. 在 `domain/interface/` 中定义 ABC 或 Protocol。
-2. 请求、结果和上下文放在同一接口文件。
-3. 具体实现放入 `infrastructure/` 的对应功能目录。
-4. 调用者通过构造参数接收接口，不在内层实例化具体实现。
-
-### 新增 Substrate
-
-简单实现可放在 `infrastructure/substrates/<feature>.py`。包含多个组件时使用：
-
-```text
-infrastructure/substrates/<feature>/
-├── __init__.py
-├── substrate.py
-├── state.py
-└── ...
-```
-
-### 新增第三方工具
-
-适配器放入 `infrastructure/integrations/<provider>/`。需要固定上游源码时，
-源码放入 `infrastructure/vendor/<project>/`，并通过 loader 延迟加载。
-
-### 新增检测器
-
-1. 检测请求、结果和接口放在领域层。
-2. 具体检测器放入 `infrastructure/detectors/<name>.py`。
-3. 检测器不得读取 `AgentAction.metadata["stego"]`、秘密比特或真实标签。
-4. 需要模型时通过构造参数接收 `LLMClient` 或本地模型，不在内部硬编码供应商。
-
-### 新增记录器
-
-持久化实现放入 `infrastructure/recorders/`。记录器只接收标准 Mapping，
-不得导入 `ExperimentReport`、`RunResult` 或应用层模块。
-
-### 新增应用用例
-
-纯用例编排放入 `application/services/`。当用例需要选择具体实现时，将选择和
-对象组装放入 `bootstrap/`。
-
-## 禁止模式
-
-- 在 `stegopot/` 根目录增加第五个逻辑包。
-- 重建根级 `core`、`interface`、`llm`、`substrates` 等技术包。
-- 新建通用 `utils`、`tools` 或空 `configs` 目录。
-- 在 `application` 中导入 `infrastructure`。
-- 在 `domain` 中导入 `application`、`infrastructure` 或 `bootstrap`。
-- 在 Substrate 中直接导入第三方 SDK 或其适配器。
-- 通过高层包重导出隐藏真实依赖方向。
+新报告为 `stegopot.report/1`，历史共谋报告独立保留。
+Console 仍消费旧报告格式，不在本次内核改动中适配；
+前后端继续独立，不能直接暴露研究报告。
 
 ## 自动检查
 
-运行：
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_architecture -v
-```
-
-架构测试会检查：
-
-- 包根目录是否只有四个逻辑层；
-- 每个逻辑区域的项目内导入是否符合允许方向；
-- ABC 和 Protocol 是否只声明在 `domain/interface/`；
-- 旧的平级技术包和混合目录是否重新出现。
-
-## 导入路径迁移
-
-| 旧路径 | 新路径 |
-| --- | --- |
-| `stegopot.domain` | `stegopot.domain.model` |
-| `stegopot.interface` | `stegopot.domain.interface` |
-| `stegopot.core` | `stegopot.application.engine` |
-| `stegopot.application.MultiAgentBuilder` | `stegopot.bootstrap.MultiAgentBuilder` |
-| `stegopot.application.run_episode` | `stegopot.application.services.run_episode` |
-| `stegopot.llm` | `stegopot.infrastructure.llm` |
-| `stegopot.substrates` | `stegopot.infrastructure.substrates` |
-| `stegopot.integrations` | `stegopot.infrastructure.integrations` |
-| `stegopot.settings` | `stegopot.infrastructure.settings` |
-| `stegopot/vendor/stego-kit` | `stegopot/infrastructure/vendor/stego-kit` |
+`tests/test_architecture.py` 检查四层依赖、核心/扩展边界与抽象契约位置。
+新增能力必须同步补充配置、中文参数说明、权限和失败用例。

@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stegopot"
-version = "0.5.0"
-description = "支持自定义拓扑、LLM 节点、生成式文本隐写与检测评估的多智能体实验框架。"
+version = "0.6.0"
+description = "配置驱动、插件可扩展、带信息隔离与审计的隐写实验框架。"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-dependencies = []
+dependencies = ["jsonschema>=4.23,<5", "PyYAML>=6,<7", "packaging>=24,<27"]
+
+[project.scripts]
+stegopot = "stegopot.bootstrap.experiments.cli:main"
 
 [project.optional-dependencies]
 stego = [
@@ -22,6 +25,9 @@ stego = [
 [tool.setuptools.packages.find]
 include = ["stegopot", "stegopot.*"]
 exclude = ["stegopot.infrastructure.vendor.stego-kit*"]
+
+[tool.setuptools.package-data]
+stegopot = ["infrastructure/vendor/stego-kit/**/*.py", "infrastructure/vendor/stego-kit/LICENSE*"]
 
 [tool.pytest.ini_options]
 testpaths = ["stegopot", "tests"]

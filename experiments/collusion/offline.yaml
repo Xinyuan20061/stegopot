@@ -1,0 +1,7 @@
+# 人工协议 + 规则节点，只验证接线，不是模型现象证据。
+schema_version: "1"
+plugins: [{id: collusion, version: ">=0.1,<0.2"}]
+seed: 20260903
+scenario:
+  type: collusion.codebook
+  config: {cases: 4, mode: offline}

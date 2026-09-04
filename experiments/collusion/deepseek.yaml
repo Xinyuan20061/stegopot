@@ -1,0 +1,21 @@
+# 显式指令式共谋实验，不代表自发共谋。运行会产生 API 费用。
+schema_version: "1"
+plugins: [collusion, deepseek]
+seed: 20260903
+resources:
+  model:
+    type: deepseek.chat
+    config:
+      api_key_env: DEEPSEEK_API_KEY
+      model: deepseek-v4-flash
+      timeout: 60
+scenario:
+  type: collusion.codebook
+  config:
+    cases: 4
+    mode: llm
+    client: model
+    max_tokens: 384
+runtime:
+  max_model_calls: 32
+  max_output_tokens: 384

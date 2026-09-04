@@ -1,63 +1,56 @@
 # StegoPot 开发约束
 
-修改本仓库前先阅读 `ARCHITECTURE.md`。项目采用四层结构，依赖方向只能是：
+修改前阅读 ARCHITECTURE.md。项目定位是多 Agent 隐写实验框架。
 
-```text
-bootstrap -> application / infrastructure -> domain
-```
+## 核心与扩展
 
-## L0：领域层
+- StegoKit、隐写接口、基础检测、通信隔离和审计必须保留在核心包。
+- 共谋协议、论文场景、专用提示和评价方法放在独立 extensions 包。
+- 供应商可以作为独立适配扩展；内核不得依赖某个供应商才能运行。
+- 扩展只导入 stegopot.domain 公开契约，不导入核心引擎、基础设施或组合根。
+- 所有 ABC/Protocol 集中在 domain/interface，不分散到各实现包。
 
-- 稳定数据模型和领域规则放在 `stegopot/domain/model/`。
-- 所有 ABC、Protocol 和稳定扩展契约放在 `stegopot/domain/interface/`。
-- `domain/model` 不得依赖 StegoPot 的其他逻辑区域。
-- `domain/interface` 只能依赖 `domain/model` 和自身。
+## 四层约束
 
-## L1：应用层
+依赖方向：bootstrap -> application / infrastructure -> domain。
 
-- 节点状态、观察构建、消息路由和轮次调度放在
-  `stegopot/application/engine/`。
-- 面向完整用例的应用服务放在 `stegopot/application/services/`。
-- 应用层只能依赖领域层，不得导入 DeepSeek、StegoKit 或具体 Substrate。
+- domain/model 只有纯数据和标准库；domain/interface 只依赖领域层。
+- application/engine 管理节点、轮次、路由和投影，不选择具体供应商。
+- application/services 编排完整用例，只依赖自身、engine 和领域层。
+- infrastructure 提供配置、插件发现、模型、核心隐写、检测、记录器。
+- recorders 只接收标准 Mapping，不反向导入应用报告类型。
+- bootstrap 负责配置接入、对象组装和资源所有权，不编写实验算法。
+- stegopot 根目录只有四个逻辑层，不能新增第五个技术包。
+- 不创建混合职责的 utils/tools/core 包；复杂能力在所属层继续按功能分目录。
+- 不用大范围重导出隐藏真实导入方向。
+- Console 保持独立，不导入业务包，不直接返回研究报告。
 
-## L2：基础设施层
+## 开放接口
 
-- LLM 策略、提示、解析器和客户端放在 `stegopot/infrastructure/llm/`。
-- 隐写检测器实现放在 `stegopot/infrastructure/detectors/`，并且只能依赖
-  `StegoDetector`、检测领域模型及注入的稳定能力接口。
-- Substrate 实现放在 `stegopot/infrastructure/substrates/`；复杂功能必须使用
-  独立子目录，例如 `substrates/stego/`。
-- 第三方 SDK 适配器放在 `stegopot/infrastructure/integrations/<provider>/`。
-- 环境变量等技术配置放在 `stegopot/infrastructure/settings/`。
-- JSON、数据库等报告记录器放在 `stegopot/infrastructure/recorders/`，记录器
-  只能接收标准映射，不能反向导入应用层报告类型。
-- 固定的上游源码放在 `stegopot/infrastructure/vendor/<project>/`。
-- Stego Substrate 必须依赖 `StegoTool`，不能直接导入 StegoKitAdapter 或 StegoKit。
-- Detection Substrate 必须依赖 `StegoDetector`，不能直接导入具体检测器。
-- 检测器只能读取公开消息，不得读取秘密比特、算法材料或中央真实标签。
+- 优先使用 domain/interface/registration.py 的 Plugin 装饰器统一注册。
+- 数据类配置字段必须提供中文 metadata.description；复杂参数使用严格 JSON Schema。
+- 组件 ID 使用插件命名空间；不得覆盖内置组件或修改全局注册表。
+- 模型、codec、审计通过声明槽位注入，不在策略中硬编码供应商。
+- 注入资源归宿主所有，组件不得自行关闭共享依赖。
+- 插件安装与配置启用是两步；只在两次实验之间切换，不做运行中模块重载。
 
-## L3：启动层
+## 隐写与审计
 
-- 对象组装、默认实现选择和 Builder 放在 `stegopot/bootstrap/`。
-- 只有启动层可以同时导入应用层和多个基础设施实现。
-- 业务算法不得写入 Builder。
+- 显式区分私有比特、公开载体、预共享材料和中央真值。
+- 新隐写实验必须通过实际接收载体解码，不能偷偷传递编码端 token ID。
+- 检测器不得读取私有标签、密钥和秘密比特。
+- 节点观察不自动加入中央种子、试验编号或真值。
+- CLI 审计不可关闭，任何审计写入失败必须中止，不能伪造完整封印。
+- 记录模型请求、实际响应、工具调用、消息干预及真实失败。
+- 离线夹具、LLM 决策、工具结果、配对重放必须区分。
+- 阴性样本与调用失败不可混为一谈；不得挑选成功样本作为分母。
+- 完整研究记录不可直接发布；哈希链不能宣传为安全沙箱或数字签名。
 
-## 禁止事项
+## 可读性与验证
 
-- 不得在 `stegopot/` 根目录新增第五个平级逻辑包。
-- 不得重新创建 `core`、`interface`、`llm`、`substrates` 等根级技术包。
-- 不得创建职责混杂的 `utils`、`tools` 或空 `configs` 目录。
-- 不得通过根包大范围重导出隐藏真实依赖路径。
-- 内层组件必须通过构造参数接收接口，不能直接实例化外层具体实现。
-
-## 代码与测试
-
-- 新增和修改的注释、文档字符串使用中文。
-- 公共类、函数及其参数必须有完整说明。
-- 修改行为时增加对应单元测试。
-- 修改目录或依赖时同步更新 `ARCHITECTURE.md` 和架构测试。
-- 完成前运行：
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
+- 注释、文档字符串和参数说明使用中文；变量名称保持清晰一致。
+- 公共函数说明参数、返回值、所有权和失败边界，优先提供类型注解。
+- 手动编辑使用 apply_patch，保留不属于当前任务的用户修改。
+- 改变结构必须同步 ARCHITECTURE.md、README 和架构测试。
+- 默认不运行付费 API；真实请求必须明确授权。
+- 完成前运行 .venv 中的 unittest discover，并验证离线实验与审计封印。

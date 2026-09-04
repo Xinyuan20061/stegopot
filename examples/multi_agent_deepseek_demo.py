@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from stegopot.bootstrap import MultiAgentBuilder
 from stegopot.application.engine import RuntimeConfig
-from stegopot.infrastructure.llm import DeepSeekClient
+from stegopot_deepseek.infrastructure.client import DeepSeekClient
 from stegopot.infrastructure.settings import load_env_file
 
 

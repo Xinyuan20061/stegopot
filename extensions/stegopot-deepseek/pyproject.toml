@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stegopot-deepseek"
+version = "0.1.0"
+description = "StegoPot deepseek extension"
+requires-python = ">=3.11"
+dependencies = ["stegopot>=0.6,<0.7", "python-dotenv>=1,<2"]
+
+[project.entry-points."stegopot.plugins"]
+deepseek = "stegopot_deepseek.bootstrap.plugin:plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["stegopot_deepseek", "stegopot_deepseek.*"]
+exclude = ["*.vendor.*"]

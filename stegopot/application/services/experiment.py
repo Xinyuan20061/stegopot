@@ -23,7 +23,7 @@ class ExperimentScenario:
   属性：
     name: 场景名称，用于报告和文件命名。
     task: 交给全部智能体节点的全局任务文本。
-    seed: 本次运行使用并写入共享上下文的随机种子。
+    seed: 仅中央运行使用的随机种子，不自动公开给智能体。
     shared_context: 对全部节点和检测器公开的结构化实验背景。
     tags: 用于筛选和分组实验的标签。
   """
@@ -115,15 +115,7 @@ def run_experiment(
   if not isinstance(actual_run_id, str) or not actual_run_id.strip():
     raise ValueError("run_id 必须是非空字符串")
   actual_run_id = actual_run_id.strip()
-  shared_context = {
-      **scenario.shared_context,
-      "experiment": {
-          "run_id": actual_run_id,
-          "scenario": scenario.name,
-          "seed": scenario.seed,
-          "tags": list(scenario.tags),
-      },
-  }
+  shared_context = dict(scenario.shared_context)
   previous_random_state = random.getstate()
   random.seed(scenario.seed)
   try:

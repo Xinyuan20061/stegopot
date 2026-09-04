@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stegopot-collusion"
+version = "0.1.0"
+description = "StegoPot collusion extension"
+requires-python = ">=3.11"
+dependencies = ["stegopot>=0.6,<0.7"]
+
+[project.entry-points."stegopot.plugins"]
+collusion = "stegopot_collusion.bootstrap.plugin:plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["stegopot_collusion", "stegopot_collusion.*"]
+exclude = ["*.vendor.*"]
