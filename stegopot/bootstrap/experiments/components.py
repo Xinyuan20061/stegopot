@@ -6,6 +6,9 @@ from typing import Any
 
 from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.interface.plugin import BuildContext
+from stegopot.domain.interface.execution import ExecutionGuard
+from stegopot.domain.interface.trace import audit_span
+from stegopot.domain.model.execution import ContractViolation
 from stegopot.domain.model.experiment import ComponentSpec, json_copy
 from stegopot.infrastructure.llm.audit import AuditedLLMClient, CallBudget
 from stegopot.infrastructure.llm.codec_audit import AuditedCodec
@@ -57,6 +60,7 @@ class ComponentSession:
       self, catalog: PluginCatalog, *, resources: Mapping[str, ComponentSpec],
       credentials: Mapping[str, str], audit: AuditSink, budget: CallBudget,
       max_output_tokens: int,
+      control: ExecutionGuard | None = None,
   ) -> None:
     """初始化受控组装会话。
 
@@ -67,6 +71,7 @@ class ComponentSession:
       audit: 宿主管理的审计接口。
       budget: 整组试验共享的模型调用计数器。
       max_output_tokens: 所有模型调用的输出上限。
+      control: 当前试验预算与取消接口；资源构造前后检查，不限制关闭操作。
     """
     self._catalog = catalog
     self._resources = resources
@@ -74,12 +79,15 @@ class ComponentSession:
     self._audit = audit
     self._budget = budget
     self._max_tokens = max_output_tokens
+    self._control = control
     self._stack = ExitStack()
     self._cache = {}
     self._building = set()
 
   def create(self, spec: ComponentSpec, kind: str, *, node_id: str | None = None) -> Any:
     """构造 spec 对应 kind 的组件；node_id 只用于策略和模型调用归属。"""
+    if self._control is not None:
+      self._control.checkpoint()
     definition = self._catalog.validate(spec, kind)
     bound = {}
     for slot, resource_kind in definition.references.items():
@@ -104,10 +112,13 @@ class ComponentSession:
     self._audit.emit({"kind": "component.creating", "data": {
         "component": spec.type, "kind": kind, "node_id": node_id,
     }})
-    instance = definition.factory(json_copy(spec.config), context)
-    close = getattr(instance, "close", None)
-    if callable(close):
-      self._stack.callback(close)
+    with audit_span(self._audit, "component.create", actor=node_id):
+      instance = definition.factory(json_copy(spec.config), context)
+      close = getattr(instance, "close", None)
+      if callable(close):
+        self._stack.callback(close)
+    if self._control is not None:
+      self._control.checkpoint()
     required = {
         "scenario": ("plan",), "policy": ("initial_state", "step", "close"),
         "llm": ("generate", "close"), "substrate": ("reset", "observe", "step", "state", "close"),
@@ -116,13 +127,14 @@ class ComponentSession:
         "evaluator": ("evaluate", "summarize"), "audit": ("emit",),
     }[kind]
     if any(not callable(getattr(instance, method, None)) for method in required):
-      raise TypeError(f"组件 {spec.type} 没有满足 {kind} 的方法契约")
+      raise ContractViolation(f"组件 {spec.type} 没有满足 {kind} 的方法契约")
     if kind == "llm":
       instance = AuditedLLMClient(instance, audit_sink=self._audit,
                                   node_id=node_id or spec.type, budget=self._budget,
-                                  max_output_tokens=self._max_tokens)
+                                  max_output_tokens=self._max_tokens, control=self._control)
     elif kind == "codec":
-      instance = AuditedCodec(instance, audit=self._audit, component_id=spec.type)
+      instance = AuditedCodec(instance, audit=self._audit, component_id=spec.type,
+                              node_id=node_id, control=self._control)
     self._audit.emit({"kind": "component.ready", "data": {"component": spec.type, "kind": kind}})
     return instance
 

@@ -8,6 +8,7 @@ from stegopot.infrastructure.llm.prompt import PromptBuilder
 from stegopot.infrastructure.llm.scheduling import RoundPolicy
 from stegopot.infrastructure.llm.scripted import EchoPolicy, ScriptedPolicy
 from stegopot.infrastructure.llm.strict_parser import StrictJsonActionParser
+from stegopot.infrastructure.llm.validation import llm_preflight, scripted_preflight
 from stegopot.infrastructure.settings.experiment import COMPONENT_SCHEMA
 from stegopot.infrastructure.substrates.communication import CommunicationSubstrate
 from stegopot.infrastructure.substrates.transforms import BlockChannel, ReplaceChannel
@@ -57,15 +58,17 @@ def builtin_plugin() -> PluginDefinition:
                  "active_round": {"type": "integer", "minimum": 0},
                  "action_kind": {"enum": ["message", "final_answer"]},
                  "target": {"type": ["string", "null"]}}, ["client"])
-  return PluginDefinition("core", "0.7.0", API_VERSION, (
+  return PluginDefinition("core", "0.8.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
       ComponentDefinition("core.metrics", "evaluator", lambda config, ctx: BasicEvaluator(), _object()),
       ComponentDefinition("core.stego_metrics", "evaluator", lambda config, ctx: StegoEvaluator(), _object()),
       ComponentDefinition("core.communication", "substrate", lambda config, ctx: CommunicationSubstrate(), _object()),
       ComponentDefinition("core.scripted", "policy", lambda config, ctx: ScriptedPolicy(config["actions"]),
-                           _object({"actions": {"type": "array", "items": action}}, ["actions"])),
+                           _object({"actions": {"type": "array", "items": action}}, ["actions"]),
+                           preflight=scripted_preflight),
       ComponentDefinition("core.echo", "policy", lambda config, ctx: EchoPolicy(), _object()),
-      ComponentDefinition("core.llm", "policy", _llm, llm, references={"client": "llm"}),
+      ComponentDefinition("core.llm", "policy", _llm, llm, references={"client": "llm"},
+                           preflight=llm_preflight),
       ComponentDefinition("core.block", "channel", lambda config, ctx: BlockChannel(), _object()),
       ComponentDefinition("core.replace", "channel", lambda config, ctx: ReplaceChannel(**config),
                            _object({"search": {"type": "string", "minLength": 1}, "replacement": text},

@@ -11,17 +11,19 @@
 | init [目录] | 幂等创建空配置目录，不执行实验 |
 | list [--workspace 目录] | 递归列出 JSON/YAML 配置，不加载插件 |
 | validate [名称] | 配置、节点、插件、资源及凭证预检，不请求模型 |
+| doctor [名称] | 预检并检查本地依赖、模型文件；不连接网络、不加载模型 |
 | run [名称] | 预检后运行，写独立审计目录 |
 | schema [--component ID] | 输出顶层或指定内置组件的严格模式 |
 | plugins list / inspect ID | 查询安装元数据或显式加载指定插件的接口描述 |
 | verify 运行目录 | 离线核验全部关联报告和封印 |
+| events 运行目录 | 默认核验后查询公开日志，可显式选择 research 和过滤条件 |
 
 名称是相对于 configs 的路径，通常省略后缀，例如 configs/team/study.yaml 对应 team/study。
 同名文件存在多个后缀时使用完整路径，例如 configs/team/study.yaml。
 省略名称只在整个 configs 中恰好一份配置时成立；没有配置或存在多份均不会自动运行。
 显式配置路径可以位于工作区外，但输出和默认 .env 仍属于 --workspace 指定目录。
 
-run 与 validate 支持 --env-file（相对工作区）或 --no-env，两者互斥。
+run、validate 与 doctor 支持 --env-file（相对工作区）或 --no-env，两者互斥。
 run 的 --output 默认 outputs，相对路径以工作区为基准，绝对路径保持原义。
 每次运行使用唯一子目录，不覆盖以前结果。退出码：0 成功，1 实验失败或部分完成，2 入口/配置错误。
 
@@ -117,6 +119,8 @@ base_url 必须是无鉴权、查询参数或片段的 API 根地址，适配器
 thinking 和 reasoning_effort 仅在服务支持时填写；不兼容 JSON 模式时可选 response_format: text。
 客户端不跟随重定向、不自动重试，失败真实记录；一次 generate 最多一次 HTTP 请求。
 宿主限制调用数与输出 token，超时是连接/读超时，不是实验强制终止机制。
+0.8 另提供节点/试验调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
+参数、默认值、错误码和取消示例见 [内核控制与审计](kernel.md)。
 
 ## 核心隐写
 
@@ -149,3 +153,13 @@ python -m stegopot verify outputs/<run-id> --expected-seal-sha256 <独立保存�
 
 不能把审计写入失败后的未封印目录当成完整实验。哈希链不是数字签名，
 只凭自身内容不能识别同时重写日志和封印的情况，须独立保存根哈希。
+
+按消息或模型调用查询时可使用：
+
+```shell
+python -m stegopot events outputs/<run-id> --scope research --node sender --round 0
+python -m stegopot events outputs/<run-id> --scope research --trial <trial-id> --message <message-id>
+```
+
+research 查询含私有研究材料，不能直接公开；默认 public 不附加调用链字段。
+配置预检错误以 JSON diagnostics 返回，包含位置、组件、机器码和修复建议。

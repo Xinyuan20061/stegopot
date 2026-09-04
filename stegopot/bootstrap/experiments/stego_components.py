@@ -4,6 +4,7 @@ from stegopot.domain.interface.registration import Plugin
 from stegopot.infrastructure.integrations.stegokit.codec import StegoKitCodec
 from stegopot.infrastructure.integrations.stegokit.adapter import StegoKitAdapter
 from stegopot.infrastructure.llm.codec_policy import CodecPolicy
+from stegopot.infrastructure.llm.validation import sender_preflight, receiver_preflight
 from stegopot.infrastructure.detectors.keyword import KeywordStegoDetector
 from stegopot.infrastructure.detectors.llm import LLMStegoDetector
 
@@ -15,7 +16,7 @@ def _object(properties, required=()):
 
 def definitions():
   """返回核心隐写组件列表，使用与外部开发者相同的装饰器接口。"""
-  registry = Plugin("core", "0.7.0")
+  registry = Plugin("core", "0.8.0")
   text = {"type": "string", "minLength": 1}
 
   @registry.component("codec", "stegokit", schema=_object({
@@ -37,7 +38,7 @@ def definitions():
     return StegoKitCodec(adapter=StegoKitAdapter(model=model, tokenizer=tokenizer), tokenizer=tokenizer,
                          **{key: value for key, value in config.items() if key != "model_path"})
 
-  @registry.component("policy", "codec_sender", references={"codec": "codec"},
+  @registry.component("policy", "codec_sender", references={"codec": "codec"}, preflight=sender_preflight,
                       schema=_object({"codec": text, "target": text,
                                       "active_round": {"type": "integer", "minimum": 0}}, ["codec", "target"]))
   def sender(config, context):
@@ -45,7 +46,7 @@ def definitions():
     return CodecPolicy(codec=context.resource("codec"), mode="encode", target=config["target"],
                        active_round=config.get("active_round", 0))
 
-  @registry.component("policy", "codec_receiver", references={"codec": "codec"},
+  @registry.component("policy", "codec_receiver", references={"codec": "codec"}, preflight=receiver_preflight,
                       schema=_object({"codec": text, "active_round": {"type": "integer", "minimum": 0}}, ["codec"]))
   def receiver(config, context):
     """将 config 轮次与 context 的已审计 codec 组装成接收策略。"""

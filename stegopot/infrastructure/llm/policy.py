@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import Any
 
 from stegopot.domain.model import AgentAction
+from stegopot.domain.model.execution import ContractViolation
 from stegopot.domain.interface import LLMClient
 from stegopot.domain.interface import LLMMessage
 from stegopot.domain.interface import Policy
@@ -121,7 +122,10 @@ class LLMPolicy(Policy[LLMState]):
         temperature=self._temperature,
         max_tokens=self._max_tokens,
     )
-    action = self._action_parser.parse(response.content)
+    try:
+      action = self._action_parser.parse(response.content)
+    except (ValueError, TypeError) as exc:
+      raise ContractViolation("模型输出不符合所选动作解析协议") from exc
     action = dataclasses.replace(
         action,
         metadata={

@@ -22,6 +22,9 @@ from stegopot.domain.interface import SubstrateEvent
 from stegopot.domain.interface import SubstrateResetContext
 from stegopot.domain.interface import SubstrateStepContext
 from stegopot.domain.interface.audit import AuditSink
+from stegopot.domain.interface.execution import ExecutionGuard
+from stegopot.domain.interface.trace import audit_span
+from stegopot.domain.model.execution import ContractViolation, ExecutionStopped, error_details
 
 TerminationMode = Literal["max_rounds", "any_final", "all_final"]
 
@@ -214,6 +217,7 @@ class MultiAgentRuntime:
       observation_builder: ObservationBuilder | None = None,
       substrate: Substrate,
       audit_sink: AuditSink | None = None,
+      control: ExecutionGuard | None = None,
   ) -> None:
     """初始化多智能体运行器。
 
@@ -224,6 +228,7 @@ class MultiAgentRuntime:
       observation_builder: 自定义局部观察构造器；为空时使用默认实现。
       substrate: 已由应用层注入的环境规则实现。
       audit_sink: 可选审计接收器；写入失败中止运行，避免无记录执行。
+      control: 可选宿主预算与取消接口；不进入节点观察，不拥有其生命周期。
     """
     self._nodes = dict(nodes)
     self._topology = topology.copy()
@@ -233,6 +238,7 @@ class MultiAgentRuntime:
     )
     self._substrate = substrate
     self._audit_sink = audit_sink
+    self._control = control
     self._validate_nodes()
     self._router = MessageRouter(self._topology)
 
@@ -265,7 +271,7 @@ class MultiAgentRuntime:
       result = self._run(task, shared_context=shared_context)
     except Exception as exc:
       self._audit("runtime.failed", data={
-          "error_type": type(exc).__name__, "error": str(exc),
+          "error_type": type(exc).__name__, "error": str(exc), "failure": error_details(exc),
       })
       raise
     self._audit("runtime.completed", data=result.to_dict())
@@ -289,6 +295,7 @@ class MultiAgentRuntime:
     if not isinstance(task, str) or not task.strip():
       raise ValueError("task 必须是非空字符串")
     context = MappingProxyType(dict(shared_context or {}))
+    self._checkpoint()
     self._reset_nodes()
     self._router.reset()
     self._substrate.reset(SubstrateResetContext(
@@ -314,30 +321,37 @@ class MultiAgentRuntime:
     termination_reason = "max_rounds"
 
     for round_index in range(self._config.max_rounds):
+      self._checkpoint()
       step_records: list[NodeStepRecord] = []
       actions: dict[str, AgentAction] = {}
+      decision_spans: dict[str, str | None] = {}
 
       for node_id in self._topology.nodes:
         if self._is_inactive(node_id, final_answers):
           continue
         node = self._nodes[node_id]
-        observation = self._observation_builder.build(ObservationContext(
-            node_id=node.node_id,
-            role=node.role,
-            node_metadata=node.metadata,
-            topology=self._topology,
-            task=task.strip(),
-            shared_context=context,
-            environment=self._substrate.observe(node_id),
-            round_index=round_index,
-            inbox=tuple(inboxes[node_id]),
-            previous_action=previous_actions[node_id],
-        ))
-        self._audit("runtime.observation", actor=node_id,
-                    round_index=round_index, data={"observation": observation})
-        action, error = self._execute_node(node, observation)
-        self._audit("runtime.action", actor=node_id, round_index=round_index,
-                    data={"action": _action_to_dict(action), "error": error})
+        self._checkpoint()
+        with audit_span(self._audit_sink, "node.decision", actor=node_id,
+                        round_index=round_index) as decision_id:
+          decision_spans[node_id] = decision_id
+          observation = self._observation_builder.build(ObservationContext(
+              node_id=node.node_id, role=node.role, node_metadata=node.metadata,
+              topology=self._topology, task=task.strip(), shared_context=context,
+              environment=self._substrate.observe(node_id), round_index=round_index,
+              inbox=tuple(inboxes[node_id]), previous_action=previous_actions[node_id],
+          ))
+          if self._control is not None:
+            self._control.check_size(observation, kind="context")
+          self._audit("runtime.observation", actor=node_id, round_index=round_index, data={
+              "observation": observation,
+              "input_message_ids": [item.message_id for item in inboxes[node_id]]})
+          action, error = self._execute_node(node, observation)
+          self._audit("runtime.action", actor=node_id, round_index=round_index,
+                      data={"action": _action_to_dict(action), "error": error})
+          if self._control is not None:
+            self._control.check_size(_action_to_dict(action), kind="context")
+            self._control.check_size(action.content or "", kind="message")
+          self._checkpoint()
         actions[node_id] = action
         previous_actions[node_id] = action
         step_records.append(NodeStepRecord(
@@ -353,11 +367,12 @@ class MultiAgentRuntime:
       routing_errors: list[str] = []
       for sender, action in actions.items():
         try:
-          routed = self._router.route(
-              sender=sender,
-              action=action,
-              round_index=round_index,
-          )
+          with audit_span(self._audit_sink, "message.route", actor=sender, round_index=round_index,
+                          parent_span_id=decision_spans.get(sender)):
+            routed = self._router.route(sender=sender, action=action, round_index=round_index)
+            for message in routed:
+              self._audit("runtime.routed", actor=sender, round_index=round_index,
+                          data={"message": message.to_dict()})
         except MessageRoutingError as exc:
           self._audit("runtime.route_rejected", actor=sender,
                       round_index=round_index, data={"error": str(exc)})
@@ -367,11 +382,11 @@ class MultiAgentRuntime:
           continue
         candidate_messages.extend(routed)
 
-      substrate_result = self._substrate.step(SubstrateStepContext(
-          round_index=round_index,
-          actions=actions,
-          messages=tuple(candidate_messages),
-      ))
+      self._checkpoint()
+      with audit_span(self._audit_sink, "environment.step", round_index=round_index):
+        substrate_result = self._substrate.step(SubstrateStepContext(
+            round_index=round_index, actions=actions, messages=tuple(candidate_messages)))
+      self._checkpoint()
       self._audit("runtime.substrate", round_index=round_index, data={
           "candidate_messages": [message.to_dict() for message in candidate_messages],
           "events": [event.to_dict() for event in substrate_result.events],
@@ -440,6 +455,11 @@ class MultiAgentRuntime:
       node.close()
     self._substrate.close()
 
+  def _checkpoint(self) -> None:
+    """在宿主边界检查取消和预算；低层嵌入未注入控制器时保持原行为。"""
+    if self._control is not None:
+      self._control.checkpoint()
+
   def _audit(
       self, kind: str, *, data: Mapping[str, Any],
       actor: str | None = None, round_index: int | None = None,
@@ -479,6 +499,7 @@ class MultiAgentRuntime:
   def _reset_nodes(self) -> None:
     """按拓扑顺序重置全部节点。"""
     for node_id in self._topology.nodes:
+      self._checkpoint()
       self._nodes[node_id].reset()
 
   def _execute_node(
@@ -489,6 +510,8 @@ class MultiAgentRuntime:
     """执行节点，并根据配置处理策略异常。"""
     try:
       return node.act(observation), None
+    except (ExecutionStopped, ContractViolation):
+      raise
     except Exception as exc:  # pylint: disable=broad-exception-caught
       if self._config.fail_fast:
         raise NodeExecutionError(

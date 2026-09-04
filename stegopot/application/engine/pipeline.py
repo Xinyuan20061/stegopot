@@ -9,6 +9,9 @@ from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.interface.channel import ChannelTransform
 from stegopot.domain.interface.detector import StegoDetector
 from stegopot.domain.interface.experiment import RewardFunction
+from stegopot.domain.interface.execution import ExecutionGuard
+from stegopot.domain.interface.trace import audit_span
+from stegopot.domain.model.execution import ContractViolation
 from stegopot.domain.interface.substrate import (
     Substrate, SubstrateEvent, SubstrateResetContext, SubstrateStepContext, SubstrateStepResult,
 )
@@ -26,6 +29,7 @@ class ExperimentPipeline(Substrate):
       channels: Sequence[tuple[str, ChannelTransform]] = (),
       detectors: Sequence[tuple[str, StegoDetector]] = (),
       rewards: Sequence[tuple[str, RewardFunction]] = (),
+      control: ExecutionGuard | None = None,
   ) -> None:
     """创建每次试验独享的环境管线。
 
@@ -36,6 +40,7 @@ class ExperimentPipeline(Substrate):
       channels: 按配置顺序执行的具名公开正文变换器。
       detectors: 只检查最终公开正文的具名检测器。
       rewards: 根据公开轮次转移计算反馈的具名奖励函数。
+      control: 可选宿主控制器，检查环境、信道、检测和奖励调用边界。
     """
     self._inner = inner
     self._audit = audit
@@ -43,6 +48,7 @@ class ExperimentPipeline(Substrate):
     self._channels = tuple(channels)
     self._detectors = tuple(detectors)
     self._rewards = tuple(rewards)
+    self._control = control
     self._ids: set[str] = set()
     self._feedback: dict[str, float] = {}
     self._public = []
@@ -54,15 +60,20 @@ class ExperimentPipeline(Substrate):
       raise ValueError("私有上下文引用未知节点")
     self._feedback = {}
     self._public = []
+    self._checkpoint()
     self._inner.reset(context)
     for _, detector in self._detectors:
+      self._checkpoint()
       detector.reset()
+    self._checkpoint()
 
   def observe(self, node_id: str) -> Mapping[str, Any]:
     """给 node_id 投影私有数据和自身奖励，绝不附加计划、种子或中央真值。"""
     if node_id not in self._ids:
       raise ValueError("未知观察主体")
+    self._checkpoint()
     value = dict(self._inner.observe(node_id))
+    self._checkpoint()
     if "framework" in value:
       raise ValueError("环境不得覆盖 framework 保留观察字段")
     value["framework"] = {"private": json_copy(self._private.get(node_id, {}))}
@@ -75,7 +86,9 @@ class ExperimentPipeline(Substrate):
 
   def step(self, context: SubstrateStepContext) -> SubstrateStepResult:
     """推进 context，再依次完成身份校验、元数据剥离、干预、检测和奖励。"""
+    self._checkpoint()
     result = self._inner.step(context)
+    self._checkpoint()
     candidates = {message.message_id: message for message in context.messages}
     delivered = []
     events = list(result.events)
@@ -87,16 +100,23 @@ class ExperimentPipeline(Substrate):
       self._validate_identity(original, message)
       seen.add(message.message_id)
       current = dataclasses.replace(message, metadata={})
+      self._check_message(current)
       for name, channel in self._channels:
-        before = current
-        current = channel.transform(current)
-        if current is not None:
-          self._validate_identity(before, current)
-          if current.metadata:
-            raise ValueError("公开信道插件不得附加元数据")
-        self._audit.emit({"kind": "channel.transformed", "round_index": context.round_index,
-                          "data": {"component": name, "input": before.to_dict(),
-                                   "output": None if current is None else current.to_dict()}})
+        self._checkpoint()
+        with audit_span(self._audit, "channel.transform", round_index=context.round_index,
+                        message_id=message.message_id):
+          before = current
+          current = channel.transform(current)
+          if current is not None:
+            self._validate_identity(before, current)
+            if current.metadata:
+              raise ContractViolation("公开信道插件不得附加元数据")
+          self._audit.emit({"kind": "channel.transformed", "round_index": context.round_index,
+                            "data": {"component": name, "input": before.to_dict(),
+                                     "output": None if current is None else current.to_dict()}})
+          if current is not None:
+            self._check_message(current)
+          self._checkpoint()
         if current is None:
           break
       if current is not None:
@@ -108,20 +128,28 @@ class ExperimentPipeline(Substrate):
             message_id=message.message_id, sender=message.sender, recipient=message.recipient,
             content=message.content, round_index=message.round_index, metadata={}, context={},
         )
-        finding = detector.detect(request)
-        if not isinstance(finding, DetectionResult) or finding.message_id != message.message_id:
-          raise ValueError("检测器返回了错误的结果类型或消息 ID")
-        events.append(SubstrateEvent("detector.result", context.round_index, metadata={
-            "component": name, "finding": finding.to_dict(),
-        }))
+        self._checkpoint()
+        with audit_span(self._audit, "detector.detect", round_index=context.round_index,
+                        message_id=message.message_id):
+          finding = detector.detect(request)
+          if not isinstance(finding, DetectionResult) or finding.message_id != message.message_id:
+            raise ContractViolation("检测器返回了错误的结果类型或消息 ID")
+          detail = {"component": name, "finding": finding.to_dict()}
+          self._audit.emit({"kind": "detector.result", "data": detail})
+          events.append(SubstrateEvent("detector.result", context.round_index, metadata=detail))
+          self._checkpoint()
     totals = dict(result.rewards)
     transition = {"round_index": context.round_index,
                   "messages": [message.to_dict() for message in delivered],
                   "actions": {key: {"kind": value.kind,
                                     "target": value.target} for key, value in context.actions.items()}}
     for name, reward in self._rewards:
-      values = dict(reward.score(json_copy(transition)))
-      self._validate_rewards(values)
+      self._checkpoint()
+      with audit_span(self._audit, "reward.score", round_index=context.round_index):
+        values = dict(reward.score(json_copy(transition)))
+        self._validate_rewards(values)
+        self._audit.emit({"kind": "reward.computed", "data": {"component": name, "rewards": values}})
+        self._checkpoint()
       for node, value in values.items():
         totals[node] = totals.get(node, 0.0) + value
       events.append(SubstrateEvent("reward.computed", context.round_index,
@@ -139,14 +167,24 @@ class ExperimentPipeline(Substrate):
   def close(self) -> None:
     """资源统一由组合根的生命周期栈关闭，避免共享客户端被重复关闭。"""
 
+  def _checkpoint(self) -> None:
+    """检查宿主执行控制；关闭流程不调用此方法，以保证停止后仍释放资源。"""
+    if self._control is not None:
+      self._control.checkpoint()
+
+  def _check_message(self, message: AgentMessage) -> None:
+    """检查实际 message 正文大小，不截断或改写载体。"""
+    if self._control is not None:
+      self._control.check_size(message.content, kind="message")
+
   @staticmethod
   def _validate_identity(before: AgentMessage, after: AgentMessage) -> None:
     """验证 before/after 属于同一投递身份，插件只能变换正文。"""
     if not isinstance(after, AgentMessage):
-      raise TypeError("信道必须返回 AgentMessage 或 None")
+      raise ContractViolation("信道必须返回 AgentMessage 或 None")
     fields = ("message_id", "sender", "recipient", "round_index")
     if any(getattr(before, key) != getattr(after, key) for key in fields):
-      raise ValueError("信道不能改变消息 ID、发送者、接收者或轮次")
+      raise ContractViolation("信道不能改变消息 ID、发送者、接收者或轮次")
 
   def _validate_rewards(self, values: Mapping[str, float]) -> None:
     """验证 values 只向现有节点分配有限数值，不允许 NaN 污染审计。"""

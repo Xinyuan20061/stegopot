@@ -6,9 +6,10 @@ from typing import Any, Protocol
 
 from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.model.experiment import validate_id
+from stegopot.domain.model.diagnostic import Diagnostic, PreflightContext
 
 
-API_VERSION = "1.0"
+API_VERSION = "1.1"
 COMPONENT_KINDS = frozenset({"scenario", "policy", "llm", "substrate", "channel",
                              "codec", "detector", "reward", "evaluator", "audit"})
 
@@ -18,7 +19,7 @@ class BuildContext(Protocol):
 
   @property
   def node_id(self) -> str | None:
-    """策略所属节点；非策略工厂为 None。"""
+    """当前策略或注入资源所属节点；无节点作用域时为 None。"""
     ...
 
   @property
@@ -46,6 +47,7 @@ class ComponentDefinition:
     config_schema: JSON Schema 2020-12 参数定义，必须拒绝未知字段。
     references: 配置字段到依赖能力类型的映射，资源按槽位注入。
     credentials: 可用作凭证引用的配置字段，值仅能是环境变量名称。
+    preflight: 可选纯校验函数，接收配置和局部上下文，返回诊断；不得构造资源或访问网络。
   """
 
   component_id: str
@@ -54,6 +56,7 @@ class ComponentDefinition:
   config_schema: Mapping[str, Any]
   references: Mapping[str, str] = field(default_factory=dict)
   credentials: Sequence[str] = ()
+  preflight: Callable[[Mapping[str, Any], PreflightContext], Sequence[Diagnostic]] | None = None
 
   def __post_init__(self) -> None:
     validate_id(self.component_id)
@@ -63,6 +66,8 @@ class ComponentDefinition:
       raise ValueError("组件依赖只能引用显式声明的 llm/codec 资源")
     if self.credentials and self.kind != "llm":
       raise ValueError("只有模型供应商工厂可以接收基础设施凭证")
+    if self.preflight is not None and not callable(self.preflight):
+      raise TypeError("preflight 必须是纯校验函数")
 
 
 @dataclass(frozen=True)

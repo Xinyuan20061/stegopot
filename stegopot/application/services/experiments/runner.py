@@ -6,12 +6,16 @@ from typing import Any
 from stegopot.application.engine.runtime import MultiAgentRuntime
 from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.interface.experiment import Evaluator
+from stegopot.domain.interface.execution import ExecutionGuard
+from stegopot.domain.interface.trace import audit_span
+from stegopot.domain.model.execution import ExecutionStopped, error_details
 from stegopot.domain.model.experiment import ExperimentPlan, TrialSpec, json_copy
 
 
 def execute_trial(
     trial: TrialSpec, *, runtime: MultiAgentRuntime | None, audit: AuditSink,
     evaluators: Sequence[tuple[str, Evaluator]], skip_reason: str | None = None,
+    control: ExecutionGuard | None = None,
 ) -> dict[str, Any]:
   """运行并评分一次试验。
 
@@ -21,6 +25,7 @@ def execute_trial(
     audit: 宿主审计接口，记录失败必须可持久化。
     evaluators: 具名中央评分器，只通过本阶段接触真值。
     skip_reason: 前序载体缺失或预算耗尽等原因，不将跳过伪装成阴性结果。
+    control: 可选试验控制器；停止后不继续执行中央评分，关闭资源由组合根负责。
 
   返回：
     标准试验记录，包含原始结果、状态和命名空间指标。
@@ -29,6 +34,7 @@ def execute_trial(
   result = {}
   status = "skipped" if skip_reason else "completed"
   error = None
+  errors = []
   if not skip_reason:
     try:
       if runtime is None:
@@ -36,17 +42,32 @@ def execute_trial(
       result = runtime.run(trial.task, shared_context=trial.shared_context).to_dict()
     except Exception as exc:
       status = "failed"
-      error = {"type": type(exc).__name__, "message": str(exc)}
+      error = error_details(exc)
+      errors.append(error)
       audit.emit({"kind": "trial.failed", "data": error})
   metrics = {}
-  for name, evaluator in evaluators:
+  for name, evaluator in (() if skip_reason else evaluators):
     try:
-      metrics[name] = json_copy(evaluator.evaluate(trial, json_copy(result)))
+      if control is not None:
+        control.checkpoint()
+      with audit_span(audit, "evaluator.evaluate"):
+        metrics[name] = json_copy(evaluator.evaluate(trial, json_copy(result)))
+      if control is not None:
+        control.checkpoint()
+    except ExecutionStopped as exc:
+      status = "failed"
+      if error is None:
+        error = error_details(exc)
+        errors.append(error)
+      audit.emit({"kind": "evaluation.stopped", "data": error_details(exc)})
+      break
     except Exception as exc:
       status = "failed"
-      error = {"type": type(exc).__name__, "message": str(exc), "component": name}
-      audit.emit({"kind": "evaluation.failed", "data": error})
-  record = {"trial": trial.to_dict(), "status": status, "error": error,
+      failure = {**error_details(exc), "component": name}
+      errors.append(failure)
+      error = error or failure
+      audit.emit({"kind": "evaluation.failed", "data": failure})
+  record = {"trial": trial.to_dict(), "status": status, "error": error, "errors": errors,
             "skip_reason": skip_reason, "result": result, "metrics": metrics,
             "message_source": "paired_replay" if trial.replay else "policy"}
   audit.emit({"kind": "trial.completed", "data": {
@@ -60,6 +81,7 @@ def run_plan(
     execute: Callable[[TrialSpec, str | None, str | None], Mapping[str, Any]],
     evaluators: Sequence[tuple[str, Evaluator]],
     progress: Callable[[Mapping[str, Any]], None] | None = None,
+    control: ExecutionGuard | None = None, audit: AuditSink | None = None,
 ) -> dict[str, Any]:
   """执行固定 plan，并将真实正文传给配对试验。
 
@@ -68,6 +90,8 @@ def run_plan(
     execute: 接收试验、可选重放正文和可选跳过原因的宿主回调。
     evaluators: 完成逐样本评价后，负责汇总全部记录的具名评分器。
     progress: 可选进度通知，不参与结果生成或评分。
+    control: 可选全局控制器，停止后不再执行汇总插件。
+    audit: 可选研究接收器，用于关联汇总调用，不拥有其关闭责任。
 
   返回：
     标准研究报告；插件指标被放在独立命名空间，不改变基础格式。
@@ -95,9 +119,16 @@ def run_plan(
   errors = []
   for name, evaluator in evaluators:
     try:
-      aggregate[name] = json_copy(evaluator.summarize(json_copy(records)))
+      if control is not None:
+        control.checkpoint()
+      with audit_span(audit, "evaluator.summarize"):
+        aggregate[name] = json_copy(evaluator.summarize(json_copy(records)))
+      if control is not None:
+        control.checkpoint()
+    except ExecutionStopped:
+      break
     except Exception as exc:
-      errors.append({"component": name, "type": type(exc).__name__, "message": str(exc)})
+      errors.append({"component": name, **error_details(exc)})
   return {"schema_version": "stegopot.report/1", "trials": records,
           "summary": {"planned": len(records),
                       **{status: sum(item["status"] == status for item in records)

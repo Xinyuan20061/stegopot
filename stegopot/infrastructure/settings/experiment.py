@@ -8,6 +8,7 @@ from jsonschema import Draft202012Validator
 import yaml
 
 from stegopot.domain.model.experiment import json_copy
+from stegopot.domain.model.diagnostic import Diagnostic, PreflightError
 
 
 COMPONENT_SCHEMA = {
@@ -37,11 +38,19 @@ CONFIG_SCHEMA = {
         "evaluators": {"type": "array", "items": COMPONENT_SCHEMA},
         "audit_sinks": {"type": "array", "items": COMPONENT_SCHEMA},
         "runtime": {"type": "object", "additionalProperties": False, "properties": {
-            "max_model_calls": {"type": "integer", "minimum": 1, "maximum": 100000},
-            "max_output_tokens": {"type": "integer", "minimum": 1, "maximum": 65536},
-            "max_rounds": {"type": "integer", "minimum": 1, "maximum": 10000},
-            "max_trials": {"type": "integer", "minimum": 1, "maximum": 10000},
-            "max_seconds": {"type": "number", "exclusiveMinimum": 0},
+            "max_model_calls": {"type": "integer", "minimum": 1, "maximum": 100000, "description": "整组实验模型调用次数上限"},
+            "max_output_tokens": {"type": "integer", "minimum": 1, "maximum": 65536, "description": "每次宿主模型请求的最大输出 token 数"},
+            "max_rounds": {"type": "integer", "minimum": 1, "maximum": 10000, "description": "允许计划的轮数上限，实际轮数由场景决定"},
+            "max_trials": {"type": "integer", "minimum": 1, "maximum": 10000, "description": "允许计划的试验总数上限"},
+            "max_seconds": {"type": "number", "exclusiveMinimum": 0, "description": "执行阶段协作式截止秒数，不强制终止在途调用"},
+            "max_model_calls_per_trial": {"type": "integer", "minimum": 1, "description": "单次试验模型调用次数上限"},
+            "max_model_calls_per_node": {"type": "integer", "minimum": 1, "description": "单次试验每节点模型调用上限"},
+            "max_tool_calls": {"type": "integer", "minimum": 1, "description": "整组实验隐写工具调用次数上限"},
+            "max_tool_calls_per_trial": {"type": "integer", "minimum": 1, "description": "单次试验隐写工具调用上限"},
+            "max_tool_calls_per_node": {"type": "integer", "minimum": 1, "description": "单次试验每节点隐写工具调用上限"},
+            "max_message_bytes": {"type": "integer", "minimum": 1, "description": "单条正文 UTF-8 字节上限，不自动截断"},
+            "max_context_bytes": {"type": "integer", "minimum": 1, "description": "观察、模型输入或工具请求的 JSON UTF-8 字节上限"},
+            "max_total_tokens": {"type": "integer", "minimum": 1, "description": "服务端已报告累计 token 上限，未知用量单独统计"},
         }},
         "audit": {"type": "object", "additionalProperties": False, "properties": {
             "required": {"const": True}, "profile": {"const": "research"},
@@ -84,13 +93,17 @@ def validate_config(value: Any) -> dict[str, Any]:
   errors = list(Draft202012Validator(CONFIG_SCHEMA).iter_errors(data))
   if errors:
     path = ".".join(str(part) for part in errors[0].absolute_path) or "root"
-    raise ValueError(f"实验配置 {path} 未通过 {errors[0].validator} 校验")
+    raise PreflightError([Diagnostic(
+        "schema." + errors[0].validator, path, "实验配置未通过模式校验",
+        "查看 schema 输出，检查字段类型、必填参数与允许范围")])
   defaults = {"plugins": [], "seed": 0, "resources": {}, "policies": {},
               "channels": [], "detectors": [], "rewards": [], "evaluators": [], "audit_sinks": []}
   for key, default in defaults.items():
     data.setdefault(key, default)
   data["runtime"] = {"max_model_calls": 64, "max_output_tokens": 1024,
                      "max_rounds": 100, "max_trials": 1000, "max_seconds": 3600,
+                     "max_tool_calls": 256, "max_message_bytes": 65536,
+                     "max_context_bytes": 1000000, "max_total_tokens": 1000000,
                      **data.get("runtime", {})}
   data["audit"] = {"required": True, "profile": "research", **data.get("audit", {})}
   return data

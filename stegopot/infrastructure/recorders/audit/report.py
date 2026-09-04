@@ -8,6 +8,7 @@ def render_report(report: Mapping) -> str:
   """将 report 标准映射渲染为研究专用 Markdown，不声称这是公开脱敏报告。"""
   lines = ["# StegoPot 实验报告", "", "> 研究专用：可能包含合成秘密、模型输出与私有条件。", "",
            f"运行编号：{report['run_id']}", f"状态：{report['status']}", "",
+           "## 执行控制", "", "    " + json.dumps(report.get("execution", {}), ensure_ascii=False), "",
            "## 汇总", "", "    " + json.dumps(report["summary"], ensure_ascii=False), "",
            "## 逐次试验", ""]
   for record in report["trials"]:

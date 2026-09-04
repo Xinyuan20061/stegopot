@@ -7,7 +7,7 @@ from stegopot.infrastructure.llm.clients.chat_completions import ChatCompletions
 
 def definitions() -> tuple[ComponentDefinition, ...]:
   """返回通用模型组件声明；只有实际构造资源时才注入授权凭证。"""
-  registry = Plugin("core", "0.7.0")
+  registry = Plugin("core", "0.8.0")
   schema = {
       "type": "object", "additionalProperties": False, "required": ["base_url", "model"],
       "properties": {

@@ -11,9 +11,14 @@ __pycache__/
 htmlcov/
 artifacts/
 outputs/
-/configs/**/*.yaml
-/configs/**/*.yml
-/configs/**/*.json
+# 用户配置只保留在本地，仓库仅提交目录说明。
+/configs/**
+!/configs/README.md
+# 开发测试及测试夹具只保留在本地。
+/tests/
+/test/
+test_*.py
+*_test.py
 build/
 dist/
 *.egg-info/

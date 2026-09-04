@@ -92,7 +92,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.7,<0.8"]
+dependencies = ["stegopot>=0.8,<0.9"]
 
 [project.entry-points."stegopot.plugins"]
 example = "stegopot_example.bootstrap.plugin:plugin"
@@ -144,7 +144,8 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 只有 `kind="llm"` 可以声明 `credentials=("api_key_env",)`。
 配置中该字段填写环境变量名称，工厂用
 `context.credential("api_key_env")` 取值；不得把真实密钥写进配置。
-供应商应关闭自动重试，或明确解释网络请求次数与宿主调用预算的差别。
+供应商不得自动重试或自行绕过宿主发起额外请求。需要重试的研究策略必须显式声明，
+并通过注入客户端逐次调用，让每次尝试都计入预算与审计。
 
 ## 实验配置
 
@@ -171,8 +172,8 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 
 默认上限：64 次模型调用、每次 1024 输出 token、100 轮、1000 次试验、3600 秒。
 场景轮数仍由 TrialSpec 指定，宿主上限不是自动增加轮次。
-时间上限在试验边界检查，不强制终止正在执行的插件。
-工具本地计算不计入 LLM API 次数，必须自行设置合理生成上限。
+时间上限在试验、轮次、组件及模型/工具调用前后协作检查，不强制终止正在执行的插件。
+工具本地计算不计入 LLM API 次数，但受独立 max_tool_calls 限制，仍须设置合理生成上限。
 
 ## 隐写与对照
 
@@ -219,3 +220,21 @@ catalog 参数注入；此时调用者负责登记全部依赖，框架仍校验
 
 新增插件至少测试：参数错误、资源声明、重复实例、节点隔离、失败状态、
 资源释放、实际载体变换，以及审计校验。不要只测试成功样本。
+
+## 1.1 预检扩展
+
+Plugin 默认声明 API 1.1；不使用新功能的既有 API 1.0 插件仍可加载。
+组件可在装饰器增加 preflight=校验函数；数据类配置与工厂保持同一类型。
+回调签名为 preflight(config, context) -> Sequence[Diagnostic]。
+
+- context 是 PreflightContext，只提供位置、节点身份、轮数、出入邻居和当前节点私有材料副本。
+- 不提供凭证、运行资源、其他节点材料或中央 truth；不得联网、构造模型或执行试验。
+- error 诊断阻止运行；warning/info 随 PreparedExperiment 和 manifest 留存。
+- Diagnostic 必须提供 code、path、message、hint；诊断文本不能回显秘密或原始参数。
+- 宿主仅依据组件声明调度预检，不要求修改核心引擎来注册新的校验规则。
+
+完整示例和执行停止约定见 [内核控制与审计](kernel.md)。
+
+策略 step 的参数名称应为 observation、prev_state，宿主使用关键字调用；
+返回 (AgentAction, next_state)。内部状态仍是不透明对象，不要求 JSON 化。
+动作字段与元数据必须符合标准序列化契约，不能把不可序列化对象交给审计层。

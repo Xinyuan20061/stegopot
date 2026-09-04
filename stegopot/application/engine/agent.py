@@ -8,6 +8,8 @@ from typing import Any
 
 from stegopot.domain.model import AgentAction
 from stegopot.domain.interface import Policy
+from stegopot.domain.model.execution import ContractViolation
+from stegopot.domain.model.experiment import json_copy
 
 
 class NodeExecutionError(RuntimeError):
@@ -63,19 +65,30 @@ class AgentNode:
       节点输出的结构化动作。
 
     异常：
-      NodeExecutionError: 策略没有返回 AgentAction 对象。
+      ContractViolation: 策略没有返回动作与状态二元组，或动作不是 AgentAction。
     """
     if not self._is_reset:
       self.reset()
-    action, next_state = self.policy.step(
+    outcome = self.policy.step(
         observation=observation,
         prev_state=self._state,
     )
+    if not isinstance(outcome, (tuple, list)) or len(outcome) != 2:
+      raise ContractViolation("策略必须返回动作和下一状态组成的二元组")
+    action, next_state = outcome
     if not isinstance(action, AgentAction):
-      raise NodeExecutionError(
+      raise ContractViolation(
           f"节点 {self.node_id} 的策略必须返回 AgentAction，"
           f"实际返回 {type(action).__name__}"
       )
+    if (not isinstance(action.kind, str) or not action.kind
+        or (action.content is not None and not isinstance(action.content, str))
+        or (action.target is not None and not isinstance(action.target, str))):
+      raise ContractViolation("动作类型、正文和目标必须满足字符串字段契约")
+    try:
+      json_copy(dict(action.metadata))
+    except (TypeError, ValueError) as exc:
+      raise ContractViolation("动作元数据必须可标准 JSON 序列化") from exc
     self._state = next_state
     return action
 

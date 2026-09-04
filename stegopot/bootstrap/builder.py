@@ -10,6 +10,7 @@ from stegopot.application.engine import MultiAgentRuntime
 from stegopot.application.engine import RuntimeConfig
 from stegopot.domain.model import AgentTopology
 from stegopot.domain.interface.audit import AuditSink
+from stegopot.domain.interface.execution import ExecutionGuard
 from stegopot.domain.interface import LLMClient
 from stegopot.domain.interface import ObservationBuilder
 from stegopot.domain.interface import Policy
@@ -153,6 +154,7 @@ class MultiAgentBuilder:
       observation_builder: ObservationBuilder | None = None,
       substrate: Substrate | None = None,
       audit_sink: AuditSink | None = None,
+      control: ExecutionGuard | None = None,
   ) -> MultiAgentRuntime:
     """构建一个可执行的多智能体运行器。
 
@@ -161,6 +163,7 @@ class MultiAgentBuilder:
       observation_builder: 自定义局部观察构造器。
       substrate: 自定义环境规则；为空时使用透明通信环境。
       audit_sink: 可选审计接收器，不传入时保持原有运行行为。
+      control: 可选执行预算与协作式取消接口；标准文件入口自动注入。
 
     返回：
       持有节点与拓扑副本的 MultiAgentRuntime。
@@ -172,4 +175,5 @@ class MultiAgentBuilder:
         observation_builder=observation_builder,
         substrate=substrate or CommunicationSubstrate(),
         audit_sink=audit_sink,
+        control=control,
     )

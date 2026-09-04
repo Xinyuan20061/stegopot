@@ -8,6 +8,9 @@ from types import MappingProxyType
 from typing import Any
 
 
+BROADCAST_TARGETS = frozenset({"*", "broadcast", "all"})
+
+
 @dataclasses.dataclass(frozen=True)
 class AgentAction:
   """智能体输出给环境的一次结构化动作。

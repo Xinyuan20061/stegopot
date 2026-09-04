@@ -5,6 +5,7 @@ from __future__ import annotations
 from stegopot.domain.model import AgentAction
 from stegopot.domain.model import AgentMessage
 from stegopot.domain.model import AgentTopology
+from stegopot.domain.model.action import BROADCAST_TARGETS
 
 
 class MessageRoutingError(ValueError):
@@ -14,7 +15,7 @@ class MessageRoutingError(ValueError):
 class MessageRouter:
   """根据通信拓扑把消息动作展开成点对点消息。"""
 
-  BROADCAST_TARGETS = frozenset({"*", "broadcast", "all"})
+  BROADCAST_TARGETS = BROADCAST_TARGETS
 
   def __init__(self, topology: AgentTopology) -> None:
     """初始化消息路由器。

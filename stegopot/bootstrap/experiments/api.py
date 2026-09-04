@@ -6,6 +6,9 @@ from typing import Any
 
 from stegopot.bootstrap.experiments.prepare import PreparedExperiment, prepare_experiment
 from stegopot.bootstrap.experiments.run import run_experiment
+from stegopot.domain.model.execution import CancellationToken
+from stegopot.domain.model.diagnostic import Diagnostic
+from stegopot.infrastructure.settings.diagnostics import diagnose_resources
 from stegopot.infrastructure.plugins.catalog import PluginCatalog
 from stegopot.infrastructure.settings.experiment import load_config
 from stegopot.infrastructure.settings.workspace import ExperimentWorkspace
@@ -36,12 +39,37 @@ def prepare_file(
   return prepare_experiment(load_config(source), catalog=catalog, environment=values)
 
 
+def diagnose_file(
+    config: str | Path | None = None, *, workspace: str | Path = ".",
+    env_file: str | Path | None = None, load_env: bool = True,
+    environment: Mapping[str, str] | None = None, catalog: PluginCatalog | None = None,
+) -> tuple[Diagnostic, ...]:
+  """预检配置并离线诊断环境，不构造模型。
+
+  参数：
+    config: 配置名或路径，None 选择工作区唯一配置。
+    workspace: 工作区根目录。
+    env_file: 可选凭证文件；不会输出其内容。
+    load_env: 是否加载凭证文件。
+    environment: 当前调用的环境覆盖映射。
+    catalog: 可选的调用方注册表；必须已登记所需组件。
+
+  返回：
+    语义提示及环境诊断。模式和钩子错误抛出 PreflightError，文件与解析异常仍向上传播；
+    环境不就绪由 error 级诊断表达。
+  """
+  prepared = prepare_file(config, workspace=workspace, env_file=env_file, load_env=load_env,
+                          environment=environment, catalog=catalog)
+  return (*prepared.diagnostics, *diagnose_resources(prepared.config["resources"]))
+
+
 def run_file(
     config: str | Path | None = None, *, workspace: str | Path = ".",
     output: str | Path | None = None, env_file: str | Path | None = None,
     load_env: bool = True, environment: Mapping[str, str] | None = None,
     catalog: PluginCatalog | None = None,
     progress: Callable[[Mapping[str, Any]], None] | None = None,
+    cancellation: CancellationToken | None = None,
 ) -> tuple[dict[str, Any], Path]:
   """运行用户配置并返回完整研究报告与审计目录。
 
@@ -54,6 +82,7 @@ def run_file(
     environment: 当前调用的环境覆盖值，不影响其他实验或 os.environ。
     catalog: 调用者预先注册的组件目录；为空时只加载配置明确允许的已安装插件。
     progress: 每个试验结束后的回调；不可修改或向未授权对象公开研究记录。
+    cancellation: 可从其他线程请求取消的令牌；不强制终止已开始的网络或模型计算。
 
   返回：
     (report, directory)。普通组件失败保存在报告中，调用者必须检查 status；
@@ -63,4 +92,4 @@ def run_file(
                           environment=environment, catalog=catalog)
   layout = ExperimentWorkspace(Path(workspace))
   destination = layout.outputs if output is None else layout.root / Path(output).expanduser()
-  return run_experiment(prepared, output=destination, progress=progress)
+  return run_experiment(prepared, output=destination, progress=progress, cancellation=cancellation)

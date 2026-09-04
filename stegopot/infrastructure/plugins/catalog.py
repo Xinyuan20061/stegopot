@@ -14,6 +14,7 @@ from packaging.version import Version
 
 from stegopot.domain.interface.plugin import API_VERSION, ComponentDefinition, PluginDefinition
 from stegopot.domain.model.experiment import ComponentSpec, json_copy
+from stegopot.domain.model.diagnostic import Diagnostic, PreflightError
 
 
 ENTRY_POINT_GROUP = "stegopot.plugins"
@@ -87,8 +88,8 @@ class PluginCatalog:
       self._distributions[name] = {"distribution": point.dist.name, "version": point.dist.version,
                                     "entry_point": point.value}
 
-  def validate(self, spec: ComponentSpec, kind: str) -> ComponentDefinition:
-    """验证 spec 引用存在、属于 kind，且参数满足声明；返回组件定义。"""
+  def validate(self, spec: ComponentSpec, kind: str, *, path: str = "config") -> ComponentDefinition:
+    """验证 spec/kind 参数并返回定义；path 用于报告配置位置，不包含配置原值。"""
     definition = self._components.get(spec.type)
     if definition is None:
       raise ValueError(f"未注册组件：{spec.type}；插件必须在配置 plugins 中启用")
@@ -98,9 +99,11 @@ class PluginCatalog:
                     key=lambda item: str(list(item.absolute_path)))
     if errors:
       error = errors[0]
-      path = ".".join(str(item) for item in error.absolute_path) or "config"
+      location = ".".join([path, *(str(item) for item in error.absolute_path)])
       # 不输出配置原值，避免错误消息意外打印调用者误填的凭证。
-      raise ValueError(f"组件 {spec.type} 的 {path} 未通过 {error.validator} 校验")
+      raise PreflightError([Diagnostic(
+          "schema." + error.validator, location, "组件参数未通过模式校验",
+          "通过 plugins inspect 查看该组件的参数类型与必填字段", component=spec.type)])
     return definition
 
   def kind_of(self, component_id: str) -> str:
@@ -120,7 +123,8 @@ class PluginCatalog:
         **self._distributions.get(plugin.plugin_id, {}),
         "components": [{"id": item.component_id, "kind": item.kind,
                         "config_schema": json_copy(item.config_schema),
-                        "references": dict(item.references), "credentials": list(item.credentials)}
+                        "references": dict(item.references), "credentials": list(item.credentials),
+                        "has_preflight": item.preflight is not None}
                        for item in plugin.components],
     } for plugin in self._plugins.values()]
 

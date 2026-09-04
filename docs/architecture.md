@@ -7,6 +7,7 @@ StegoPot 是多 Agent 隐写实验框架。核心保留通信隔离、StegoKit�
 用户的实验由自己的配置和独立插件定义，安装框架不会自动创建或运行实验。
 
 仓库只有三类主要目录：`stegopot/` 是实现，`configs/` 是用户输入，`docs/` 是文档。
+开发者本地另有 tests/contracts，只验证框架契约；该目录被 Git 忽略，不上传也不随安装包分发。
 `outputs/` 按运行需要生成。安装包只分发 `stegopot`，工作区可以建立在任何用户目录。
 `.env` 与 `.venv` 属于本机环境，不属于业务层；凭证和结果不能提交仓库。
 
@@ -15,10 +16,10 @@ StegoPot 是多 Agent 隐写实验框架。核心保留通信隔离、StegoKit�
 ```text
 stegopot/
   domain/
-    interface/                  所有 ABC/Protocol、插件声明与装饰器
-    model/                      消息、动作、拓扑、计划与试验数据
+    interface/                  所有 ABC/Protocol、插件声明、预检、执行控制与调用链契约
+    model/                      消息、动作、拓扑、计划、诊断与取消令牌
   application/
-    engine/                     节点状态、轮次调度、路由和信息投影
+    engine/                     节点状态、轮次调度、路由、信息投影和分层预算
     services/experiments/       通用场景、试验执行、结果汇总
   infrastructure/
     settings/                   工作区发现、配置校验、独立环境快照
@@ -29,7 +30,7 @@ stegopot/
     vendor/stego-kit/           固定版本上游源码
     substrates/                通信、隐写环境和信道实现
     detectors/                 基础公开载体检测
-    recorders/audit/            双日志、脱敏、封印、报告与核验
+    recorders/audit/            双日志、调用关联、只读查询、脱敏、封印和报告
   bootstrap/
     experiments/               文件级 API、CLI、预检、组装和资源生命周期
 ```
@@ -62,13 +63,15 @@ Plugin 装饰器只生成组件声明；发现已安装插件属于基础设施�
 CLI / prepare_file / run_file
  -> ExperimentWorkspace：选择唯一配置、生成独立环境快照
  -> load_config：读取 JSON/YAML 并做严格校验
- -> prepare_experiment：发现允许的组件、校验凭证与引用、固定计划
+ -> prepare_experiment：发现允许的组件、执行纯预检、校验凭证与引用、固定计划
  -> ScenarioProvider.plan：只返回 ExperimentPlan / TrialSpec
- -> ComponentSession：构造本次组件，注入声明的模型、codec 和审计
+ -> ExecutionBudget：创建全局、试验和节点额度，响应取消与截止时间
+ -> ComponentSession：构造本次组件，注入已审计、已限额的模型和 codec
  -> MultiAgentRuntime：局部观察 -> Policy.step -> 候选消息
  -> 环境 -> 信道变换 -> 公开检测 -> 奖励 -> 下一轮收件箱
  -> Evaluator：中央评分，不回填模型答案
- -> AuditJournal：报告、研究/公开日志、关联封印
+ -> TracedAudit -> AuditJournal：调用链、研究/公开日志和关联封印
+ -> AuditReader：默认核验后查询，只读取封印报告声明的试验
 ```
 
 工作区发现不解析配置，预检不创建模型；第三方场景必须自行遵守纯计划约束。
@@ -86,6 +89,10 @@ CLI / prepare_file / run_file
 - 凭证只传给声明 credentials 的模型工厂，不传给策略、信道或评分器。
 - 内置模型适配不自动重试，不跟随重定向，不把鉴权头或服务端错误正文打印出来。
 - 插件自定义事件进入 plugin.event 命名空间，不能伪造宿主的公开投递事件。
+- preflight 是可选纯函数，返回带 code/path/hint 的诊断；核心调度不硬编码插件校验逻辑。
+- ExecutionGuard 通过领域协议跨层注入；全局停止影响后续试验，局部额度耗尽只终止当前试验。
+- 中央评分资源只使用全局额度，不占用实验节点的局部额度。
+- trace/span/call 标识只进入研究视图，不进入公开正文、公开日志或节点观察。
 
 上述约束适用于可信组件，不是 Python 进程安全沙箱。安装的插件仍有宿主进程权限。
 热插拔指两次实验之间启停或更换组件；更换已安装代码后使用新进程。
@@ -100,6 +107,9 @@ CLI 和文件级 API 不能关闭宿主日志；写入失败中止，不生成�
 
 ## 开发验证
 
-仓库不保留之前的实验测试。框架修改仍需用临时工作区验证入口、拓扑、插件、
-凭证隔离、失败行为和审计核验，并检查安装包脱离源码目录后能否工作。
+公开仓库不包含测试文件。开发者本地 tests/contracts 维护纯框架回归，验证入口、拓扑、
+插件、预算、取消、资源关闭、公开投影、审计核验与四层依赖。
+本地具备测试集时，通过 python -m unittest discover -s tests/contracts -v 运行，并额外检查安装包脱离源码目录后能否工作。
 测试结果和临时配置不得回填 configs 或作为框架预置实验发布。
+
+0.8 的参数、状态和调用约定见 [内核控制与审计](kernel.md)。
