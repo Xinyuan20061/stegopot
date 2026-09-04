@@ -21,13 +21,30 @@ def load_env_file(
   返回：
     本次成功加载到进程环境变量中的键值映射。
   """
+  loaded: dict[str, str] = {}
+  for key, value in read_env_file(path).items():
+    if override or key not in os.environ:
+      os.environ[key] = value
+      loaded[key] = value
+  return loaded
+
+
+def read_env_file(path: str | os.PathLike[str]) -> dict[str, str]:
+  """读取凭证文件，不修改进程环境，避免多个工作区之间相互污染。
+
+  参数：
+    path: UTF-8 编码的 KEY=value 文件；不存在时返回空映射。
+
+  返回：
+    解析后的字符串映射。调用者不得打印或持久化完整返回值。
+    格式错误抛出 ValueError，只报告行号而不回显凭证。
+  """
   env_path = Path(path)
   if not env_path.exists():
     return {}
-
   loaded: dict[str, str] = {}
   for line_number, raw_line in enumerate(
-      env_path.read_text(encoding="utf-8").splitlines(),
+      env_path.read_text(encoding="utf-8-sig").splitlines(),
       start=1,
   ):
     line = raw_line.strip()
@@ -37,12 +54,10 @@ def load_env_file(
       raise ValueError(f"{env_path} 第 {line_number} 行不是 KEY=value 格式。")
     key, value = line.split("=", 1)
     key = key.strip()
-    if not key:
-      raise ValueError(f"{env_path} 第 {line_number} 行缺少变量名。")
+    if not key.isidentifier():
+      raise ValueError(f"{env_path} 第 {line_number} 行变量名无效。")
     parsed_value = _parse_env_value(value.strip())
-    if override or key not in os.environ:
-      os.environ[key] = parsed_value
-      loaded[key] = parsed_value
+    loaded[key] = parsed_value
   return loaded
 
 

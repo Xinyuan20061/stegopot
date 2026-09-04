@@ -25,8 +25,8 @@ StegoPot 核心提供多节点运行、隐写编解码、信息隔离、信道�
 
 ## 装饰器注册
 
-完整可安装示例在 `templates/plugin`，包括分层目录、安装元数据、参数说明和运行配置。
-注册器本身没有全局副作用：
+插件应作为自己的安装包开发，不写入核心源码。下文代码展示接口用法，
+不是仓库预置实验。注册器本身没有全局副作用：
 
 ```python
 from dataclasses import dataclass, field
@@ -45,13 +45,60 @@ def build_reward(config, context):
 ```
 
 其中 `DeliveryReward` 放在扩展的应用服务层，实现 `score(transition)`。
-生产代码以模板文件为准，不把业务计算放在注册函数中。
+不要把业务计算放在注册函数中；注册只做参数接入和对象组装。
 
-安装元数据：
+例如在独立目录 my-plugin 中创建以下结构：
+
+```text
+my-plugin/
+  pyproject.toml
+  src/stegopot_example/
+    __init__.py
+    application/reward.py
+    bootstrap/plugin.py
+```
+
+各 Python 子目录补充 `__init__.py`。在 bootstrap/plugin.py 中放上面的注册代码，
+并从自己的 application.reward 导入 DeliveryReward。后者可以实现为：
+
+```python
+from collections.abc import Mapping
+from typing import Any
+
+class DeliveryReward:
+  """按实际公开投递计算奖励，不访问中央真值。"""
+
+  def __init__(self, *, points: float) -> None:
+    """points 是每条投递给予发送者的奖励。"""
+    self._points = points
+
+  def score(self, transition: Mapping[str, Any]) -> Mapping[str, float]:
+    """transition 为宿主公开轮次转移；返回节点 ID 到本轮奖励的映射。"""
+    rewards: dict[str, float] = {}
+    for message in transition["messages"]:
+      node = message["sender"]
+      rewards[node] = rewards.get(node, 0.0) + self._points
+    return rewards
+```
+
+pyproject.toml 的最小安装元数据：
 
 ```toml
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-stegopot-plugin"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["stegopot>=0.7,<0.8"]
+
 [project.entry-points."stegopot.plugins"]
 example = "stegopot_example.bootstrap.plugin:plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 ```
 
 `plugin` 实例可直接调用，导出后冻结组件列表。
@@ -158,11 +205,17 @@ decode 只接收实际载体和预共享材料。真实 token ID 不作为隐含
 ## 开发与验证
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e templates/plugin
-.\.venv\Scripts\python.exe -m stegopot run templates/plugin/experiment.yaml
-.\.venv\Scripts\python.exe -m stegopot plugins inspect example
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+python -m pip install -e D:/Research/my-plugin
+python -m stegopot plugins inspect example
+python -m stegopot validate my_experiment
+python -m stegopot run my_experiment
 ```
+
+在自己的配置中添加 `plugins: [example]` 和
+`rewards: [{type: example.delivery, config: {points: 1.0}}]`。
+既有 experiment 配置的节点、拓扑和任务由使用者定义；插件安装不会自动执行实验。
+Python 调用者也可构建 PluginCatalog、add(plugin())，通过 prepare_file/run_file 的
+catalog 参数注入；此时调用者负责登记全部依赖，框架仍校验组件契约。
 
 新增插件至少测试：参数错误、资源声明、重复实例、节点隔离、失败状态、
 资源释放、实际载体变换，以及审计校验。不要只测试成功样本。

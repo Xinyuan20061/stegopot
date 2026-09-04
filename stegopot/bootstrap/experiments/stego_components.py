@@ -15,7 +15,7 @@ def _object(properties, required=()):
 
 def definitions():
   """返回核心隐写组件列表，使用与外部开发者相同的装饰器接口。"""
-  registry = Plugin("core", "0.6.0")
+  registry = Plugin("core", "0.7.0")
   text = {"type": "string", "minLength": 1}
 
   @registry.component("codec", "stegokit", schema=_object({

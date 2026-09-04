@@ -12,6 +12,7 @@ from stegopot.infrastructure.settings.experiment import COMPONENT_SCHEMA
 from stegopot.infrastructure.substrates.communication import CommunicationSubstrate
 from stegopot.infrastructure.substrates.transforms import BlockChannel, ReplaceChannel
 from stegopot.bootstrap.experiments.stego_components import definitions
+from stegopot.bootstrap.experiments.llm_components import definitions as llm_definitions
 
 
 def _object(properties=None, required=()):
@@ -56,7 +57,7 @@ def builtin_plugin() -> PluginDefinition:
                  "active_round": {"type": "integer", "minimum": 0},
                  "action_kind": {"enum": ["message", "final_answer"]},
                  "target": {"type": ["string", "null"]}}, ["client"])
-  return PluginDefinition("core", "0.6.0", API_VERSION, (
+  return PluginDefinition("core", "0.7.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
       ComponentDefinition("core.metrics", "evaluator", lambda config, ctx: BasicEvaluator(), _object()),
       ComponentDefinition("core.stego_metrics", "evaluator", lambda config, ctx: StegoEvaluator(), _object()),
@@ -69,4 +70,4 @@ def builtin_plugin() -> PluginDefinition:
       ComponentDefinition("core.replace", "channel", lambda config, ctx: ReplaceChannel(**config),
                            _object({"search": {"type": "string", "minLength": 1}, "replacement": text},
                                    ["search", "replacement"])),
-  ) + definitions())
+  ) + definitions() + llm_definitions())

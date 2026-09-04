@@ -30,7 +30,7 @@ class _Fanout:
       sink.emit(event)
 
 
-def run_experiment(prepared, *, output="artifacts/experiments", progress=None):
+def run_experiment(prepared, *, output="outputs", progress=None):
   """运行已预检实验，返回报告和新建审计目录。
 
   参数：

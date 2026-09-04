@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stegopot"
-version = "0.6.0"
+version = "0.7.0"
 description = "配置驱动、插件可扩展、带信息隔离与审计的隐写实验框架。"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,6 +28,3 @@ exclude = ["stegopot.infrastructure.vendor.stego-kit*"]
 
 [tool.setuptools.package-data]
 stegopot = ["infrastructure/vendor/stego-kit/**/*.py", "infrastructure/vendor/stego-kit/LICENSE*"]
-
-[tool.pytest.ini_options]
-testpaths = ["stegopot", "tests"]

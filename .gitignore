@@ -10,6 +10,10 @@ __pycache__/
 .coverage
 htmlcov/
 artifacts/
+outputs/
+/configs/**/*.yaml
+/configs/**/*.yml
+/configs/**/*.json
 build/
 dist/
 *.egg-info/
