@@ -1,136 +1,107 @@
 <p align="center">
-  <img src="docs/assets/stegopot-icon.png" alt="StegoPot" width="128">
+  <strong>简体中文</strong> | <a href="README_EN.md">English</a>
 </p>
+
+<p align="center">
+  <img src="docs/assets/stegopot-icon.png" alt="StegoPot" width="112">
+</p>
+
 <h1 align="center">StegoPot</h1>
-<p align="center"><strong>面向多智能体隐写、隐蔽通信与共谋现象研究的开放实验框架</strong></p>
-<p align="center">配置驱动 · 信息流约束 · 配对反事实 · 全过程审计 · 插件化扩展</p>
 
-**当前版本：1.0.0 · 插件 API：1.4 · Python：3.11+**
+<p align="center"><strong>多智能体隐写、隐蔽通信与共谋研究实验框架</strong></p>
 
-StegoPot 用一套稳定接口组织多智能体通信实验。研究者只需编写 YAML/JSON 配置，
-即可声明节点、模型、定向拓扑、环境、信道干预、检测器、奖励、评价器和受控工具；
-框架负责预检、调度、信息投影、证据记录、失败处理、封印核验与指标复算。
+<p align="center">
+  <a href="https://github.com/Xinyuan20061/stegopot/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/release-v1.0.0-2F81F7?style=flat-square" alt="Release v1.0.0"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/PyTorch-2.1%2B%20optional-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch 2.1+ optional">
+  <img src="https://img.shields.io/badge/plugin%20API-1.4-4B5563?style=flat-square" alt="Plugin API 1.4">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-D22128?style=flat-square" alt="Apache-2.0 License"></a>
+</p>
 
-项目的核心定位是**标准实验基础设施**，不是某一篇论文的复现仓库。具体威胁假设、
-诱因、提示词、数据集、隐写协议和实验结论应由配置或独立插件提供。这样可以在不修改
-内核的情况下复现已有工作，也可以系统比较新的多 Agent 隐蔽交互现象。
+<p align="center">
+  <a href="#核心功能">核心功能</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#llm-节点">LLM 节点</a> ·
+  <a href="#隐写实验">隐写实验</a> ·
+  <a href="#插件扩展">插件扩展</a>
+</p>
 
-## 可以做什么
+StegoPot 使用 YAML/JSON 描述实验。用户可以配置 Agent 节点、有向拓扑、模型、
+隐写编解码器、信道、检测器、奖励和评价器，然后通过统一命令完成预检、运行、
+审计、完整性验证与指标复算。
 
-| 能力 | 用途 |
+## 核心功能
+
+| 功能 | 说明 |
 | --- | --- |
-| 自定义多 Agent 拓扑 | 定义任意节点、角色和有向通信边，按同步轮次执行 |
-| LLM 节点 | 每个节点独立选择兼容 Chat Completions 的模型、提示词和采样参数 |
-| 连续 Session | 在同一 Session 的 Episode 间延续策略状态与节点私有标量反馈 |
-| 类型化信息流 | 明确区分公开、节点私有、秘密载荷、解码私有、监控可见、评价专用和研究专用信息 |
-| 双模式通信 | 区分普通/自发研究的 `opaque` 载体与显式 codec 产生的 `instrumented` 载体 |
-| 核心隐写能力 | 通过内置 StegoKit 适配器编码、传输并从实际接收文本恢复比特 |
-| 信道与检测 | 对公开正文实施阻断、替换或插件化干预，并运行规则/LLM 检测器 |
-| 激励闭环 | 使用逐轮公开证据奖励和 Episode 结束后的中央结果奖励 |
-| 受控节点工具 | 按节点允许列表调用插件工具，结果只在下一轮返回调用节点 |
-| 配对反事实 | 固定源消息正文与哈希，只改变信道、检测器或奖励处理条件 |
-| 标准指标 | 统计恢复率、BER、嵌入覆盖率、bits/token、检测混淆矩阵、AUROC 与任务效用 |
-| 可核验证据 | 保存研究/公开双日志、源码指纹、计划清单、威胁模型、子试验封印和根封印 |
-| 离线复算 | 验证封印与当前插件源码后，从原始结果重新计算逐试验及汇总指标 |
-| 热插拔扩展 | 通过装饰器注册 scenario、policy、tool、codec、detector、reward 等 12 类组件 |
+| 多 Agent 拓扑 | 自定义节点、角色和有向边，按同步轮次执行消息交互 |
+| LLM 节点 | 每个节点独立配置模型、系统角色、采样参数和输出约束 |
+| 隐写编解码 | 通过内置 StegoKit 适配器生成载体并从实际接收文本恢复比特 |
+| 通信来源标记 | 区分普通模型消息 `opaque` 与受控编解码消息 `instrumented` |
+| 信息流控制 | 分离公开信息、节点私有信息、秘密载荷、监控信息和评价信息 |
+| 信道与检测 | 在消息投递前执行阻断、替换、自定义信道和规则/LLM 检测 |
+| 奖励闭环 | 支持逐轮奖励、检测惩罚和 Episode 结束后的结果奖励 |
+| 节点工具 | Agent 通过允许列表调用工具，工具结果仅返回调用节点 |
+| 连续 Session | 在同一 Session 的 Episode 之间保留允许延续的策略状态 |
+| 配对反事实 | 固定同一条真实载体，仅改变信道、检测器或奖励条件 |
+| 标准指标 | 输出 BER、恢复率、bits/token、检测性能、AUROC 和任务效用 |
+| 插件系统 | 通过装饰器注册 12 类组件，在两次实验之间热插拔 |
+| 全过程审计 | 保存公开/研究双日志、运行计划、源码指纹和实验报告 |
+| 证据验证 | 校验日志哈希链和结果封印，并从原始结果离线复算指标 |
 
-StegoPot 1.0 可以正式运行以下类型的研究：
+适用场景包括：
 
-- 普通多 Agent 协作、竞争与定向通信基线；
-- 明确使用隐写算法的受控通信和鲁棒性实验；
-- 给 LLM 奖励、私有信息或工具后观察其通信行为；
-- 同一真实载体在无干预、净化、阻断和检测条件下的配对比较；
-- 隐写通信成功率、检测性能和任务效用之间的权衡；
-- 自定义论文复现插件或新实验协议的批量执行与证据归档。
-
-## 科学边界
-
-框架会记录发生了什么，但不会替研究者自动证明行为的动机。
-
-- `instrumented` 表示正文由受控 codec 明确生成，可以作为隐写正标签。
-- `opaque` 表示框架不知道消息来源，不能仅凭比特恢复就宣称 LLM 自发共谋。
-- 脚本策略、重放正文和工具编码结果都会被明确区分，不能冒充模型自然生成。
-- 检测指标只在存在有效标签时有意义；AUROC 需要同时存在正负样本。
-- 结论仍需足够重复、随机种子、合理对照、统计分析和人工审查。
-
-## 架构
-
-```text
-用户配置 / 第三方插件
-          |
-          v
-bootstrap     配置入口、预检、组件组装、生命周期、CLI、指标复算
-          |
-          v
-application   多 Agent 调度、观察投影、通信管线、反事实编排、评价
-          |
-          v
-domain        稳定接口与不可变领域模型
-          ^
-          |
-infrastructure 模型、StegoKit、检测器、工具审计、配置、日志和封印实现
-```
-
-依赖方向受约束：`domain` 不依赖外层，`application` 只依赖领域契约，
-`infrastructure` 实现契约，`bootstrap` 是唯一组合根。第三方插件应依赖
-`stegopot.domain.interface` 和 `stegopot.domain.model`，不要导入内部运行器。
-
-主要目录：
-
-```text
-stegopot/
-  domain/
-    interface/          Policy、Substrate、Tool、Codec、Detector、Plugin 等接口
-    model/              动作、消息、计划、信息、通信、工具、威胁模型等数据
-  application/
-    engine/             节点、路由、同步运行器、通信处理管线和预算检查点
-    services/           场景展开、反事实、Session、奖励、指标和威胁模型编译
-  infrastructure/
-    llm/                LLM 策略、动作解析、客户端与调用审计
-    integrations/       StegoKit 适配
-    tools/              通用工具审计包装
-    detectors/          基础检测器
-    substrates/         默认通信环境和信道变换
-    plugins/            插件发现、版本和 Schema 校验
-    recorders/audit/    双日志、查询、哈希链、封印与完整性验证
-    settings/           配置、工作区、环境文件和资源诊断
-  bootstrap/experiments 配置 API、CLI、预检、运行和离线复算
-configs/                用户本地实验配置；仓库只跟踪说明文件
-docs/                   架构、内核、插件和威胁模型文档
-```
+- 多智能体定向通信、协作和竞争基线；
+- LLM 隐蔽通信与共谋行为观察；
+- 显式隐写算法的容量、恢复率和鲁棒性测试；
+- 载体净化、消息阻断和检测器消融实验；
+- 隐写成功率、检测性能与任务效用的联合评估；
+- 论文复现协议和新实验组件的插件化实现。
 
 ## 安装
 
-在项目根目录使用当前虚拟环境：
+### 从发行版安装
 
 ```powershell
+python -m pip install https://github.com/Xinyuan20061/stegopot/releases/download/v1.0.0/stegopot-1.0.0-py3-none-any.whl
+```
+
+### 从源码安装
+
+```powershell
+git clone https://github.com/Xinyuan20061/stegopot.git
+cd stegopot
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
 
-需要内置 StegoKit 和本地 Transformers 模型时：
+需要 StegoKit、本地 Transformers 模型和 PyTorch 时安装可选依赖：
 
 ```powershell
 python -m pip install -e ".[stego]"
 ```
 
-初始化一个与安装目录独立的实验工作区：
+## 快速开始
+
+### 1. 创建实验工作区
 
 ```powershell
 python -m stegopot init D:\Research\my-stegopot-study
 ```
 
-工作区约定：
+工作区包含：
 
 ```text
 my-stegopot-study/
-  .env               本地凭证，不提交版本控制
-  configs/           用户实验 YAML/JSON
-  outputs/           每次运行生成一个不可覆盖的证据目录
+  .env               本地密钥和环境变量
+  configs/           YAML/JSON 实验配置
+  outputs/           每次运行产生的独立结果目录
 ```
 
-## 最小实验
+### 2. 编写实验配置
 
-将以下内容保存为工作区 `configs/communication.yaml`：
+创建 `D:\Research\my-stegopot-study\configs\communication.yaml`：
 
 ```yaml
 schema_version: "1"
@@ -158,17 +129,25 @@ scenario:
       - [sender, receiver]
 ```
 
-运行前先做纯预检，再执行：
+`edges` 是有向边。只有 `sender -> receiver` 被声明时，发送节点才能向接收节点投递消息。
+
+### 3. 预检并运行
 
 ```powershell
 python -m stegopot validate communication --workspace D:\Research\my-stegopot-study
 python -m stegopot run communication --workspace D:\Research\my-stegopot-study
 ```
 
-`validate` 不构造模型、不发网络请求。`doctor` 会额外检查本地 StegoKit 模型文件，
-同样不会下载权重或测试远程账户。
+`validate` 只校验配置、组件引用、拓扑、预算和信息流，不构造模型或发起网络请求。
+使用本地 StegoKit 模型时，可通过 `doctor` 额外检查模型目录和运行资源：
 
-## 接入 DeepSeek
+```powershell
+python -m stegopot doctor communication --workspace D:\Research\my-stegopot-study
+```
+
+## LLM 节点
+
+StegoPot 内置兼容 Chat Completions 协议的模型客户端，可用于 DeepSeek 等服务。
 
 在工作区 `.env` 中保存密钥：
 
@@ -176,7 +155,7 @@ python -m stegopot run communication --workspace D:\Research\my-stegopot-study
 DEEPSEEK_API_KEY=你的实际密钥
 ```
 
-配置中只写环境变量名，不写密钥值：
+在配置中声明模型资源和节点策略：
 
 ```yaml
 schema_version: "1"
@@ -216,67 +195,24 @@ scenario:
       - [sender, receiver]
 ```
 
-模型请求、原始响应、解析动作、消息路由和实际投递都进入研究审计。凭证不会写入
-配置清单或日志。远程请求是否成功仍取决于账户、网络和服务端模型能力。
+配置只引用环境变量名称，不会把密钥写入报告或审计日志。每个 LLM 节点可以使用不同的
+模型资源、角色提示、目标节点和 token 上限。
 
-## 类型化信息流
+## 隐写实验
 
-新实验应使用 `information` 声明跨组件信息，而不是把所有材料混入
-`shared_context` 或 `node_contexts`：
+### 通信模式
 
-```yaml
-scenario:
-  type: core.explicit
-  config:
-    task: "评估隐蔽协作"
-    nodes: []  # 实际配置中填写节点
-    edges: []
-    information:
-      public_rules:
-        class: public
-        value: {language: zh}
-      sender_secret:
-        class: secret_payload
-        value: "101101"
-        visible_to: ["node:sender", evaluator, research_audit]
-        description: "发送节点需要传递的中央标注比特"
-      decoder_key:
-        class: decoder_private
-        value: {key_id: shared-01}
-        visible_to: ["node:receiver", evaluator, research_audit]
-      monitor_reference:
-        class: monitor_visible
-        value: {baseline: clean}
-```
+| 模式 | 来源 | 用途 |
+| --- | --- | --- |
+| `opaque` | 普通脚本策略或 LLM | 观察未知来源消息，不预设其是否含有隐写信息 |
+| `instrumented` | `core.codec_sender` | 记录 codec、载荷长度、实际消耗比特、载体 token 数和正文哈希 |
 
-标准类别：
+`opaque` 消息默认不作为检测正负标签。实验数据已有可靠标签时，可以通过
+`truth.stego_label` 提供标签。
 
-| 类别 | 默认/允许语义 |
-| --- | --- |
-| `public` | 可授权所有节点、环境、检测、评价和审计主体 |
-| `agent_private` | 必须显式指定一个或多个 `node:<id>`，可同时授权中央评价 |
-| `secret_payload` | 必须显式指定发送节点，不允许交给 Detector、Reward 或公开审计 |
-| `decoder_private` | 必须显式指定接收节点，不允许交给 Detector、Reward 或公开审计 |
-| `monitor_visible` | 默认只给 Detector、Evaluator 和研究审计 |
-| `evaluator_only` | 默认给 Evaluator、OutcomeReward 和研究审计 |
-| `research_only` | 只给研究审计，不进入任何运行组件 |
+### StegoKit
 
-可用组件主体为 `substrate`、`detector`、`reward`、`outcome_reward`、`evaluator`、
-`public_audit`、`research_audit`；节点主体写作 `node:<id>`。类别定义的是授权上限，
-`visible_to` 只能缩小或在允许范围内选择，不能把秘密扩大授权给监控器。
-
-预检生成 `stegopot.threat-model/2`，其中只保存资产类别、读取者和含值声明摘要，
-不复制真实信息值。运行时由宿主按主体投影，默认拒绝未授权信息。
-
-## 隐写通信
-
-StegoPot 提供两种不会混淆的通信来源：
-
-1. `opaque`：普通脚本或 LLM 消息。框架不预先知道是否隐写，适合研究自发行为。
-2. `instrumented`：`core.codec_sender` 调用受控 codec 后自动生成。记录 codec ID、
-   输入比特数、实际消耗比特数、载体 token 数和正文哈希，但不把秘密放入消息。
-
-内置 StegoKit 资源示意：
+内置 `core.stegokit` 从本地路径加载 Hugging Face 模型：
 
 ```yaml
 resources:
@@ -287,33 +223,57 @@ resources:
       algorithm: ac
       generation:
         max_new_tokens: 128
-
-# 节点 policy 分别使用：
-# core.codec_sender:   {codec: stego, target: receiver, active_round: 0}
-# core.codec_receiver: {codec: stego, active_round: 1}
 ```
 
-解码端只对**信道处理后实际收到的文本**重新分词，不接收编码端隐藏 token ID。
-StegoKit 加载本地模型时启用 `local_files_only` 并关闭远程代码信任。
+发送端和接收端策略分别使用：
 
-`core.stego_metrics` 要求中央 `truth.secret_bits` 和 `truth.receiver`，输出：
+```yaml
+# 发送节点
+policy:
+  type: core.codec_sender
+  config:
+    codec: stego
+    target: receiver
+    active_round: 0
 
-- 比特恢复、长度完整性和 BER；
-- payload/consumed bits、嵌入覆盖率、载体 token 数和 bits/token；
-- 载体投递率；
-- 检测混淆矩阵、TPR、FPR、precision 和 AUROC；
-- 可选 `truth.expected_answers` 对应的任务效用；
-- 配对反事实处理组结果。
+# 接收节点
+policy:
+  type: core.codec_receiver
+  config:
+    codec: stego
+    active_round: 1
+```
 
-`opaque` 载体默认不参与正负样本统计。若中央数据集已为当前 Trial 提供可靠标签，可在
-`truth.stego_label` 写入布尔值；未标注观察会单独计入 `security.unlabeled`。
+发送节点私有上下文提供 `secret_bits`、可选 `cover` 和 `shared_material`。接收端只解码
+经过 Substrate 和 Channel 处理后实际收到的文本，不读取编码端的隐藏 token 序列。
 
-## 配对反事实
+### 信息流
 
-`core.counterfactual` 先执行一个源 Trial，再将其中唯一真实消息正文固定到多个处理分支。
-分支发送者不会再次调用原策略或模型；报告记录源 Trial、消息 ID、正文 SHA-256、
-配对组和 treatment ID。可改变的处理层是 `channels`、`detectors` 和 `rewards`，
-任务、拓扑、策略、环境、真值等字段默认必须与源试验一致。
+实验可以通过 `information` 声明数据类别和可见主体：
+
+```yaml
+information:
+  public_rules:
+    class: public
+    value: {language: zh}
+  sender_secret:
+    class: secret_payload
+    value: "101101"
+    visible_to: ["node:sender", evaluator, research_audit]
+  decoder_key:
+    class: decoder_private
+    value: {key_id: shared-01}
+    visible_to: ["node:receiver", evaluator, research_audit]
+```
+
+支持 `public`、`agent_private`、`secret_payload`、`decoder_private`、`monitor_visible`、
+`evaluator_only` 和 `research_only` 七类信息。宿主在运行前检查授权范围，并为节点、
+环境、检测器、奖励器和评价器分别生成数据视图。
+
+### 配对反事实
+
+`core.counterfactual` 先运行源 Trial，再把源消息正文和 SHA-256 固定到多个处理分支。
+分支不会重新调用发送模型，因此可以直接比较信道、检测器或奖励变化的影响。
 
 ```yaml
 scenario:
@@ -321,11 +281,15 @@ scenario:
   config:
     source:
       id: source
-      task: "生成并传递一个载体"
+      task: "生成一个通信载体"
       max_rounds: 2
       nodes:
         - id: sender
-          policy: {type: core.scripted, config: {actions: [{kind: message, content: "carrier", target: receiver}]}}
+          policy:
+            type: core.scripted
+            config:
+              actions:
+                - {kind: message, content: "carrier", target: receiver}
         - id: receiver
           policy: {type: core.echo}
       edges: [[sender, receiver]]
@@ -335,15 +299,24 @@ scenario:
       - id: raw
         channels: []
       - id: blocked
-        channels: [{type: core.block}]
+        channels:
+          - {type: core.block}
 ```
 
-该机制适合做载体净化、检测器消融和信道鲁棒性比较，避免不同模型采样产生的正文差异
-污染处理效应。
+### 标准指标
+
+使用 `core.stego_metrics` 可以计算：
+
+- 比特恢复率、解码完整性和 BER；
+- payload bits、consumed bits、嵌入覆盖率和 bits/token；
+- 消息投递率；
+- 检测混淆矩阵、TPR、FPR、precision 和 AUROC；
+- `truth.expected_answers` 对应的任务效用；
+- 配对反事实各处理组的聚合结果。
 
 ## 节点工具
 
-节点只可调用其 `tools` 映射中声明的别名。工具动作为：
+节点只允许调用自身 `tools` 映射中声明的工具别名。工具动作格式如下：
 
 ```json
 {
@@ -352,82 +325,69 @@ scenario:
   "target": null,
   "metadata": {},
   "tool_call": {
-    "tool": "codec_tool",
-    "operation": "encode",
-    "arguments": {"text": "..."}
+    "tool": "calculator",
+    "operation": "double",
+    "arguments": {"value": 21}
   }
 }
 ```
 
-宿主先检查节点授权、调用次数和 JSON 大小，再创建 `ToolRequest`。`ToolResult` 只在
-下一轮的 `observation.tool_results` 返回调用节点，不作为公开消息广播。请求、响应、
-失败、调用者和调用 ID 进入研究审计，未知工具别名直接违反契约。
+宿主检查节点授权、调用预算和 JSON 大小后执行工具。结果只在下一轮的
+`observation.tool_results` 中返回调用节点；请求、结果和错误进入研究审计。
 
-## 插件开发
+## 内置组件
 
-插件 API 1.4 支持以下组件类型：
+StegoPot 1.0.0 提供 20 个内置组件：
 
-`scenario`、`policy`、`llm`、`substrate`、`channel`、`codec`、`detector`、
-`reward`、`outcome_reward`、`evaluator`、`tool`、`audit`。
+| 类型 | 组件 |
+| --- | --- |
+| Scenario | `core.explicit`、`core.sessions`、`core.counterfactual` |
+| Policy | `core.scripted`、`core.echo`、`core.llm`、`core.codec_sender`、`core.codec_receiver` |
+| LLM | `core.chat_completions` |
+| Substrate | `core.communication` |
+| Channel | `core.block`、`core.replace` |
+| Codec | `core.stegokit` |
+| Detector | `core.keyword`、`core.llm_detector` |
+| Reward | `core.delivery_reward`、`core.detection_penalty` |
+| Outcome reward | `core.exact_match_outcome` |
+| Evaluator | `core.metrics`、`core.stego_metrics` |
 
-最小通用工具插件：
+查看组件参数 Schema：
 
-```python
-from stegopot.domain.interface.registration import Plugin
-from stegopot.domain.model import ToolResult
-
-plugin = Plugin("my_lab", "0.1.0")
-
-class Calculator:
-    """只实现声明的确定性运算。"""
-
-    def execute(self, request):
-        if request.operation != "double":
-            raise ValueError("不支持的操作")
-        return ToolResult(request.arguments["value"] * 2)
-
-    def close(self):
-        pass
-
-@plugin.component(
-    "tool",
-    "calculator",
-    schema={
-        "type": "object",
-        "properties": {},
-        "additionalProperties": False,
-    },
-)
-def build_calculator(config, context):
-    return Calculator()
-
-def entrypoint():
-    return plugin()
+```powershell
+python -m stegopot plugins inspect core
+python -m stegopot schema --component core.llm
 ```
 
-发布包中注册入口：
+## 配置参考
 
-```toml
-[project.entry-points."stegopot.plugins"]
-my_lab = "my_lab.plugin:entrypoint"
-```
+| 顶层字段 | 作用 |
+| --- | --- |
+| `schema_version` | 配置版本，当前为字符串 `"1"` |
+| `scenario` | 生成实验计划的场景组件 |
+| `plugins` | 允许加载的第三方插件和版本范围 |
+| `resources` | 可复用的 LLM、Codec 或 Tool 资源 |
+| `policies` | 按节点 ID 覆盖场景策略 |
+| `topology` | 覆盖场景中的有向拓扑边 |
+| `channels` | 消息信道处理组件 |
+| `detectors` | 公开文本检测组件 |
+| `rewards` | 逐轮奖励组件 |
+| `outcome_rewards` | Episode 结束后的结果奖励 |
+| `evaluators` | 实验指标评价器 |
+| `audit_sinks` | 附加审计输出组件 |
+| `threat_model` | 历史、监控上下文和审计投影设置 |
+| `runtime` | 调用次数、时间、token、消息和上下文预算 |
 
-实验配置需要在顶层显式允许插件：
+组件统一使用以下结构：
 
 ```yaml
-plugins:
-  - id: my_lab
-    version: ">=0.1,<1"
+type: plugin.component
+config:
+  parameter: value
 ```
 
-每个工厂只得到经过 Schema 校验的自身配置和受限 `BuildContext`。资源依赖通过
-`references` 声明，凭证通过 `credentials` 声明；不得从全局容器、环境或其他节点
-读取未授权数据。`evaluator` 必须无资源、无凭证，以保证可离线复算。
-
-组件 ID 必须使用插件命名空间，例如 `my_lab.calculator`。同一运行的注册表冻结后不可
-修改；热插拔发生在两次实验之间，不是在执行中替换代码。
-
-完整约定见 [插件开发](docs/plugin_development.md)。
+配置 Schema 会拒绝未知字段；YAML 重复键、锚点和别名同样会被拒绝。密钥应放入
+工作区 `.env`，并在组件配置中通过环境变量名称引用。
 
 ## 命令行
 
@@ -446,9 +406,8 @@ python -m stegopot plugins inspect core
 python -m stegopot schema --component core.llm
 ```
 
-`events` 默认先核验封印且只读公开视图。研究视图包含计划、真值、模型回复、工具输出
-和完整失败信息，只有明确使用 `--scope research` 时才读取。独立保存根 `seal.json`
-的 SHA-256 后，可通过 `--expected-seal-sha256` 检测整组证据连同封印一起被替换。
+`events` 默认先验证封印并读取公开日志。完整研究事件需要显式指定
+`--scope research`。
 
 ## Python API
 
@@ -459,92 +418,98 @@ from stegopot.bootstrap.experiments.api import (
     run_file,
 )
 
-prepared = prepare_file("study", workspace="D:/Research/my-stegopot-study")
-print(len(prepared.plan.trials), prepared.threat_model.schema_version)
+prepared = prepare_file(
+    "study",
+    workspace="D:/Research/my-stegopot-study",
+)
+print(len(prepared.plan.trials))
 
-report, directory = run_file(
+report, output_directory = run_file(
     "study",
     workspace="D:/Research/my-stegopot-study",
 )
 if report["status"] != "completed":
     raise RuntimeError(report["errors"])
 
-verification = recompute_directory(directory)
+verification = recompute_directory(output_directory)
 assert verification["verified"]
 ```
 
-`prepare_file`、CLI 和 `run_file` 使用同一预检与组装链路。低层 `MultiAgentBuilder`
-适合嵌入自定义应用，但不会自动生成标准威胁模型、实验清单和封印工件。
+CLI 和 Python API 使用相同的配置解析、预检、组件组装和审计流程。
 
-## 配置约定
+## 插件扩展
 
-顶层配置字段：
+插件 API 1.4 支持 `scenario`、`policy`、`llm`、`substrate`、`channel`、`codec`、
+`detector`、`reward`、`outcome_reward`、`evaluator`、`tool` 和 `audit`。
 
-| 字段 | 作用 |
-| --- | --- |
-| `schema_version` | 必填，当前固定为字符串 `"1"` |
-| `scenario` | 必填，生成完整 `ExperimentPlan` 的场景组件 |
-| `plugins` | 允许加载的已安装插件和可选版本范围 |
-| `resources` | 可复用的 `llm`、`codec` 或 `tool` 资源 |
-| `policies` | 按节点 ID 覆盖场景策略 |
-| `topology` | 可选全局拓扑边覆盖 |
-| `channels` / `detectors` / `rewards` | 默认公开处理管线 |
-| `outcome_rewards` | Episode 结束后的中央反馈组件 |
-| `evaluators` | 中央纯评价器 |
-| `audit_sinks` | 附加审计接收器；不能关闭宿主审计 |
-| `threat_model` | 策略历史、检测器公共上下文和审计投影声明 |
-| `runtime` | 调用、轮数、时间、token、消息和上下文预算 |
+```python
+from stegopot.domain.interface.registration import Plugin
+from stegopot.domain.model import ToolResult
 
-组件统一写法：
+plugin = Plugin("my_lab", "0.1.0")
+
+
+class Calculator:
+    """提供一个确定性的倍增操作。"""
+
+    def execute(self, request):
+        if request.operation != "double":
+            raise ValueError("不支持的操作")
+        return ToolResult(request.arguments["value"] * 2)
+
+    def close(self):
+        """当前工具没有需要释放的资源。"""
+
+
+@plugin.component(
+    "tool",
+    "calculator",
+    schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+)
+def build_calculator(config, context):
+    """构造工具实例。"""
+    return Calculator()
+
+
+def entrypoint():
+    """返回插件定义。"""
+    return plugin()
+```
+
+在插件包中声明入口：
+
+```toml
+[project.entry-points."stegopot.plugins"]
+my_lab = "my_lab.plugin:entrypoint"
+```
+
+实验配置必须显式允许第三方插件：
 
 ```yaml
-type: plugin.component
-config:
-  parameter: value
+plugins:
+  - id: my_lab
+    version: ">=0.1,<1"
 ```
 
-所有配置 Schema 都拒绝未知字段；YAML 重复键、锚点和别名被拒绝。真实密钥必须只通过
-环境变量引用。`configs/`、`.env`、`outputs/` 和本地测试均已加入 `.gitignore`。
+完整接口约定见 [插件开发文档](docs/plugin_development.md)。
 
-## 执行顺序
+## 实验输出
 
-```text
-配置读取
- -> 插件允许列表与 JSON Schema 校验
- -> 纯预检钩子
- -> Scenario 生成固定计划
- -> 信息流与威胁模型编译
- -> manifest 写入
- -> Trial / Session / Episode
-      -> 节点局部观察
-      -> Policy 决策或受控 Tool 调用
-      -> 拓扑路由
-      -> Substrate
-      -> Channel
-      -> 最终公开文本 Detector
-      -> Reward
-      -> 下一轮
- -> OutcomeReward
- -> Evaluator
- -> 汇总、双日志和关联封印
-```
-
-每个 Episode 都重置环境、收件箱和上一动作。只有声明允许时，策略不透明状态和节点自己的
-标量反馈才会延续到同一 Session 的下一 Episode；不会跨 Session 或写入报告。
-
-## 输出与审计
-
-一次成功运行产生：
+每次运行产生一个不可覆盖的结果目录：
 
 ```text
 outputs/<run-id>/
-  manifest.json             stegopot.manifest/3：配置、固定计划、插件和源码指纹
-  threat-model.json         stegopot.threat-model/2：有效视图、边界和信息流摘要
-  experiment-report.json    stegopot.report/1：逐试验结果、指标和汇总
-  report.md                 面向阅读的摘要
+  manifest.json             配置、固定计划、插件和源码指纹
+  threat-model.json         有效拓扑、组件边界和信息流摘要
+  experiment-report.json    逐试验结果、指标和汇总
+  report.md                 可阅读的实验摘要
   research.jsonl            完整研究事件哈希链
-  public.jsonl              默认拒绝未知事件的最小公开投影哈希链
-  seal.json                 根工件与双日志终点封印
+  public.jsonl              最小公开事件哈希链
+  seal.json                 根工件和日志终点封印
   <trial-id>/
     result.json
     research.jsonl
@@ -552,61 +517,34 @@ outputs/<run-id>/
     seal.json
 ```
 
-`verify` 检查：
+验证结果目录：
 
-- 双日志序号、前序哈希和终点哈希；
-- 根工件和每个子 Trial 工件的文件摘要；
-- 根报告与子结果一致；
-- 实际 Trial 声明与预注册计划逐项一致；
-- 威胁模型的计划、拓扑和类型化信息流摘要一致。
+```powershell
+python -m stegopot verify D:\Research\my-stegopot-study\outputs\<run-id>
+python -m stegopot recompute D:\Research\my-stegopot-study\outputs\<run-id>
+```
 
-`recompute` 在上述检查后还会验证当前启用插件的 Python 源码指纹，并重新构造无资源
-Evaluator，从封印的固定计划和实际结果计算指标。它不会运行节点、请求模型、调用 codec
-或修改原目录。框架哈希链不是数字签名、可信时间戳或防篡改存储；高保证实验应独立保存
-根哈希并使用只写介质或外部签名系统。
+`verify` 检查文件摘要、日志哈希链、子试验封印和预注册计划一致性；`recompute`
+进一步验证当前插件源码，并从固定计划和原始结果重新计算指标。
 
-## 运行限制
+## 运行约束
 
-常用 `runtime` 默认值：
+`runtime` 可限制模型调用、工具调用、单次输出 token、累计 token、试验数、轮数、
+执行时间、消息大小和上下文大小。框架还支持按 Trial 和按节点设置调用上限。
 
-| 参数 | 默认值 | 含义 |
-| --- | ---: | --- |
-| `max_model_calls` | 64 | 整组模型调用上限 |
-| `max_tool_calls` | 256 | codec 与通用 Tool 的整组调用上限 |
-| `max_output_tokens` | 1024 | 单次宿主模型请求输出上限 |
-| `max_total_tokens` | 1000000 | 服务端已报告累计 token 上限 |
-| `max_rounds` | 100 | 场景可声明的最大轮数 |
-| `max_trials` | 1000 | 独立 Trial 与全部 Episode 总上限 |
-| `max_seconds` | 3600 | 协作式执行截止时间 |
-| `max_message_bytes` | 65536 | 单条公开正文 UTF-8 大小上限 |
-| `max_context_bytes` | 1000000 | 观察、模型输入和工具数据 JSON 大小上限 |
-
-还可设置 `max_model_calls_per_trial`、`max_model_calls_per_node`、
-`max_tool_calls_per_trial` 和 `max_tool_calls_per_node`。调用在开始前原子预占额度，失败调用
-仍计数。取消和截止是协作式的，不能强制终止已经进入第三方 Python 代码或网络请求的调用。
-
-## 安全边界
-
-当前信任模型是 `trusted_in_process`：插件与内核运行在同一个 Python 进程中。
-
-框架能够保证通过宿主接口提供的数据按声明投影，并限制组件类型、资源引用、凭证注入、
-消息身份、工具允许列表、调用预算和公开审计内容；但**不能阻止恶意插件直接访问文件、
-网络、环境变量、进程内存或无限占用 CPU/GPU**。因此 StegoPot 1.0 是轻量级实验框架，
-不是操作系统安全沙箱，也不是分布式执行平台。
-
-处理不可信第三方插件时，应在容器、独立账户或虚拟机中运行，并由外部系统限制网络、
-文件、CPU、内存和 GPU。框架内核保持轻量，把硬隔离交给部署层。
+StegoPot 的插件运行在同一 Python 进程中。节点可见信息、工具权限和调用预算由宿主限制，
+但不可信第三方插件仍应在容器或虚拟机中运行，以隔离文件、网络、CPU、内存和 GPU。
 
 ## 文档
 
-- [文档索引](docs/README.md)
+- [使用指南](docs/usage.md)
+- [插件开发](docs/plugin_development.md)
 - [架构与依赖方向](docs/architecture.md)
 - [内核控制与审计](docs/kernel.md)
 - [威胁模型与信息边界](docs/threat_model.md)
-- [插件开发](docs/plugin_development.md)
-- [使用指南](docs/usage.md)
+- [文档索引](docs/README.md)
 
 ## 许可证
 
-StegoPot 使用 [Apache License 2.0](LICENSE)。内置的 StegoKit 上游源码保留其原始许可证，
+StegoPot 使用 [Apache License 2.0](LICENSE)。内置 StegoKit 上游源码保留其原始许可证，
 详见 `stegopot/infrastructure/vendor/stego-kit/LICENSE`。
