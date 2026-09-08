@@ -2,6 +2,7 @@
 
 from stegopot.application.services.experiments.explicit import BasicEvaluator, ExplicitScenario
 from stegopot.application.services.experiments.sessions import SessionScenario
+from stegopot.application.services.experiments.counterfactual import CounterfactualScenario
 from stegopot.application.services.experiments.stego import StegoEvaluator
 from stegopot.application.services.rewards import (
     DeliveryReward,
@@ -32,7 +33,12 @@ def _llm(config, context):
   """将 config 提示与 context 提供的审计客户端注入通用 LLM 策略。"""
   parser = None
   if "action_kind" in config:
-    parser = StrictJsonActionParser(kind=config["action_kind"], target=config.get("target"))
+    parser = StrictJsonActionParser(
+        kind=config["action_kind"],
+        target=config.get("target"),
+        tool=config.get("tool"),
+        operation=config.get("operation"),
+    )
   policy = LLMPolicy(
       node_id=context.node_id, role=config.get("role", context.node_id), client=context.resource("client"),
       prompt_builder=PromptBuilder(system_prompt=config.get("prompt", "")), action_parser=parser,
@@ -45,25 +51,60 @@ def _llm(config, context):
 def builtin_plugin() -> PluginDefinition:
   """返回独立可用的基础组件，没有安装任何扩展包时也能运行规则实验。"""
   text = {"type": "string"}
-  action = _object({"kind": {"enum": ["message", "wait", "final_answer"]},
+  tool_call = _object({
+      "tool": {"type": "string", "minLength": 1,
+               "description": "当前节点已授权的工具别名"},
+      "operation": {"type": "string", "minLength": 1,
+                    "description": "工具组件定义的操作名称"},
+      "arguments": {"type": "object", "description": "工具调用 JSON 参数"},
+  }, ["tool", "operation"])
+  action = _object({"kind": {"enum": ["message", "tool_call", "wait", "final_answer"]},
                     "content": {"type": ["string", "null"]}, "target": {"type": ["string", "null"]},
-                    "metadata": {"type": "object"}}, ["kind"])
+                    "metadata": {"type": "object"},
+                    "tool_call": tool_call}, ["kind"])
+  information_asset = _object({
+      "class": {"enum": ["public", "agent_private", "secret_payload",
+                           "decoder_private", "monitor_visible",
+                           "evaluator_only", "research_only"],
+                "description": "信息的安全类别，限制 visible_to 可授权主体"},
+      "value": {"description": "当前 Trial 使用的 JSON 信息值"},
+      "visible_to": {"type": "array", "uniqueItems": True,
+                     "items": {"type": "string", "minLength": 1},
+                     "description": "node:<id> 或标准组件主体组成的读取列表"},
+      "description": {"type": "string", "description": "不包含秘密值的信息用途说明"},
+  }, ["class", "value"])
+  information = {
+      "type": "object",
+      "additionalProperties": information_asset,
+      "description": "由运行时按主体投影的类型化信息资产",
+  }
+  node = _object({
+      "id": {"type": "string", "minLength": 1},
+      "role": {"type": "string"},
+      "policy": COMPONENT_SCHEMA,
+      "tools": {"type": "object", "additionalProperties": COMPONENT_SCHEMA,
+                "description": "当前节点可调用的工具别名与组件声明"},
+  }, ["id", "policy"])
   explicit = _object({
       "task": {"type": "string", "minLength": 1},
-      "nodes": {"type": "array", "minItems": 1, "items": _object({
-          "id": text, "role": text, "policy": COMPONENT_SCHEMA}, ["id", "policy"])},
+      "nodes": {"type": "array", "minItems": 1, "items": node},
       "edges": {"type": "array", "items": {"type": "array", "items": text, "minItems": 2, "maxItems": 2}},
       "substrate": COMPONENT_SCHEMA, "repeat": {"type": "integer", "minimum": 1, "maximum": 10000},
       "max_rounds": {"type": "integer", "minimum": 1, "maximum": 10000},
       "shared_context": {"type": "object"}, "node_contexts": {"type": "object"}, "truth": {"type": "object"},
+      "information": information,
+      "channels": {"type": "array", "items": COMPONENT_SCHEMA},
+      "detectors": {"type": "array", "items": COMPONENT_SCHEMA},
+      "rewards": {"type": "array", "items": COMPONENT_SCHEMA},
   }, ["task", "nodes", "edges"])
   llm = _object({"client": text, "role": text, "prompt": text, "model": text,
                  "temperature": {"type": "number", "minimum": 0, "maximum": 2},
                  "max_tokens": {"type": "integer", "minimum": 1, "maximum": 65536},
                  "keep_history": {"type": "boolean"},
                  "active_round": {"type": "integer", "minimum": 0},
-                 "action_kind": {"enum": ["message", "final_answer"]},
-                 "target": {"type": ["string", "null"]}}, ["client"])
+                 "action_kind": {"enum": ["message", "tool_call", "final_answer"]},
+                 "target": {"type": ["string", "null"]},
+                 "tool": text, "operation": text}, ["client"])
   reward_number = {
       "type": "number",
       "description": "奖励组件使用的有限数值；非有限值会在构造时拒绝",
@@ -100,6 +141,8 @@ def builtin_plugin() -> PluginDefinition:
                "description": "节点在全部 Episode 中保持不变的角色说明"},
       "policy": {**COMPONENT_SCHEMA,
                  "description": "节点在当前 Session 使用的策略组件"},
+      "tools": {"type": "object", "additionalProperties": COMPONENT_SCHEMA,
+                "description": "该节点全部 Episode 共用的工具授权"},
   }, ["id", "policy"])
   episode = _object({
       "id": {"type": "string", "minLength": 1,
@@ -112,6 +155,13 @@ def builtin_plugin() -> PluginDefinition:
                         "description": "当前 Episode 按节点 ID 隔离的私有材料"},
       "truth": {"type": "object",
                 "description": "只供中央评价与 outcome_reward 使用的真实标签"},
+      "information": information,
+      "channels": {"type": "array", "items": COMPONENT_SCHEMA,
+                   "description": "当前 Episode 的信道组件覆盖"},
+      "detectors": {"type": "array", "items": COMPONENT_SCHEMA,
+                    "description": "当前 Episode 的检测器组件覆盖"},
+      "rewards": {"type": "array", "items": COMPONENT_SCHEMA,
+                  "description": "当前 Episode 的逐轮奖励组件覆盖"},
       "max_rounds": {"type": "integer", "minimum": 1, "maximum": 10000,
                      "description": "当前 Episode 的同步轮次上限"},
   }, ["id", "task"])
@@ -153,9 +203,54 @@ def builtin_plugin() -> PluginDefinition:
       "case_sensitive": {"type": "boolean", "default": True,
                          "description": "英文精确匹配是否区分大小写"},
   }, ["answer_node", "truth_key", "reward_nodes"])
-  return PluginDefinition("core", "0.11.0", API_VERSION, (
+  counterfactual_source = _object({
+      "id": {"type": "string", "minLength": 1,
+             "description": "生成原始载体的源 Trial ID"},
+      "task": {"type": "string", "minLength": 1},
+      "nodes": {"type": "array", "minItems": 1, "items": node},
+      "edges": {"type": "array", "items": {
+          "type": "array", "items": text, "minItems": 2, "maxItems": 2}},
+      "substrate": COMPONENT_SCHEMA,
+      "max_rounds": {"type": "integer", "minimum": 1, "maximum": 10000},
+      "shared_context": {"type": "object"},
+      "node_contexts": {"type": "object"},
+      "truth": {"type": "object"},
+      "information": information,
+      "channels": {"type": "array", "items": COMPONENT_SCHEMA},
+      "detectors": {"type": "array", "items": COMPONENT_SCHEMA},
+      "rewards": {"type": "array", "items": COMPONENT_SCHEMA},
+  }, ["task", "nodes", "edges"])
+  treatment = _object({
+      "id": {"type": "string", "minLength": 1,
+             "description": "配对处理条件 ID"},
+      "trial_id": {"type": "string", "minLength": 1,
+                   "description": "可选全局唯一 Trial ID"},
+      "channels": {"type": "array", "items": COMPONENT_SCHEMA,
+                   "description": "只在该分支执行的信道处理链"},
+      "detectors": {"type": "array", "items": COMPONENT_SCHEMA,
+                    "description": "只在该分支执行的检测器"},
+      "rewards": {"type": "array", "items": COMPONENT_SCHEMA,
+                  "description": "只在该分支执行的逐轮奖励"},
+  }, ["id"])
+  counterfactual = _object({
+      "source": counterfactual_source,
+      "carrier": _object({
+          "sender": {"type": "string", "minLength": 1},
+          "recipient": {"type": "string", "minLength": 1},
+          "message_id": {"type": "string", "minLength": 1},
+      }, ["sender", "recipient"]),
+      "group_id": {"type": "string", "minLength": 1},
+      "frozen_fields": {"type": "array", "uniqueItems": True,
+                        "items": {"enum": ["task", "shared_context",
+                                             "node_contexts", "truth", "topology",
+                                             "policies", "substrate"]}},
+      "treatments": {"type": "array", "minItems": 1, "items": treatment},
+  }, ["source", "carrier", "treatments"])
+  return PluginDefinition("core", "1.0.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
       ComponentDefinition("core.sessions", "scenario", lambda config, ctx: SessionScenario(config), sessions),
+      ComponentDefinition("core.counterfactual", "scenario",
+                          lambda config, ctx: CounterfactualScenario(config), counterfactual),
       ComponentDefinition("core.metrics", "evaluator", lambda config, ctx: BasicEvaluator(), _object()),
       ComponentDefinition("core.stego_metrics", "evaluator", lambda config, ctx: StegoEvaluator(), _object()),
       ComponentDefinition("core.communication", "substrate", lambda config, ctx: CommunicationSubstrate(), _object()),

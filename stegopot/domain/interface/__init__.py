@@ -1,6 +1,12 @@
 """StegoPot 对实现层公开的稳定扩展接口。"""
 
 from stegopot.domain.interface.detector import StegoDetector
+from stegopot.domain.interface.codec import Carrier
+from stegopot.domain.interface.codec import DecodeRequest
+from stegopot.domain.interface.codec import DecodeResult
+from stegopot.domain.interface.codec import EncodeRequest
+from stegopot.domain.interface.codec import EncodeResult
+from stegopot.domain.interface.codec import StegoCodec
 from stegopot.domain.interface.experiment import Evaluator
 from stegopot.domain.interface.experiment import OutcomeRewardFunction
 from stegopot.domain.interface.experiment import RewardFunction
@@ -22,9 +28,15 @@ from stegopot.domain.interface.substrate import SubstrateEvent
 from stegopot.domain.interface.substrate import SubstrateResetContext
 from stegopot.domain.interface.substrate import SubstrateStepContext
 from stegopot.domain.interface.substrate import SubstrateStepResult
+from stegopot.domain.interface.tool import ToolExecutor
 
 __all__ = [
     "Evaluator",
+    "Carrier",
+    "DecodeRequest",
+    "DecodeResult",
+    "EncodeRequest",
+    "EncodeResult",
     "LLMClient",
     "LLMMessage",
     "LLMResponse",
@@ -35,6 +47,7 @@ __all__ = [
     "RewardFunction",
     "ScenarioProvider",
     "StegoDetector",
+    "StegoCodec",
     "StegoEmbedRequest",
     "StegoEmbedResult",
     "StegoExtractRequest",
@@ -46,4 +59,5 @@ __all__ = [
     "SubstrateResetContext",
     "SubstrateStepContext",
     "SubstrateStepResult",
+    "ToolExecutor",
 ]

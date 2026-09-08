@@ -29,7 +29,7 @@ class PreparedExperiment:
     plan: 场景展开并应用拓扑、策略和评价器覆盖后的固定计划。
     threat_model: 根据最终计划编译的有效信息可见性清单。
     catalog: 已完成组件校验并冻结的插件注册表。
-    resources: 配置声明的模型与 codec 资源引用。
+    resources: 配置声明的模型、codec 与通用 Tool 资源引用。
     credentials: 仅供组合根注入的授权凭证，不参与 repr。
     diagnostics: 不阻止运行的 warning 和 info 级预检结果。
   """
@@ -64,8 +64,8 @@ def prepare_experiment(
   resources = {name: ComponentSpec.from_dict(spec) for name, spec in config["resources"].items()}
   for spec in resources.values():
     kind = catalog.kind_of(spec.type)
-    if kind not in {"llm", "codec"}:
-      raise ValueError("resources 只接受模型或隐写 codec")
+    if kind not in {"llm", "codec", "tool"}:
+      raise ValueError("resources 只接受模型、隐写 codec 或通用工具")
     catalog.validate(spec, kind)
   source_env = os.environ if environment is None else environment
   credentials = {}
@@ -77,6 +77,8 @@ def prepare_experiment(
     definition = catalog.validate(spec, kind, path=context.path)
     if kind == "scenario" and (definition.references or definition.credentials):
       raise ValueError("场景插件只能生成计划，不能声明运行资源或凭证")
+    if kind == "evaluator" and (definition.references or definition.credentials):
+      raise ValueError("评价器必须可离线复算，不能声明运行资源或凭证")
     for slot, expected in definition.references.items():
       if slot not in spec.config:
         continue
@@ -129,15 +131,53 @@ def prepare_experiment(
                   if node.node_id in config["policies"] else node for node in trial.nodes)
     trial = replace(trial, nodes=nodes,
                     edges=config.get("topology", {}).get("edges", trial.edges))
-    if trial.replay and (trial.replay.sender, trial.replay.recipient) not in trial.edges:
+    paired = trial.paired_spec
+    if paired and (paired.sender, paired.recipient) not in trial.edges:
       raise PreflightError([Diagnostic(
           "replay.missing_edge", f"plan.trials[{trial_index}].edges",
           "重放发送者与接收者之间没有授权通信边", "添加该方向的拓扑边")])
     if trial.max_rounds > config["runtime"]["max_rounds"]:
       raise ValueError("场景轮数超过宿主 max_rounds 上限")
+    effective_channels = (
+        tuple(ComponentSpec.from_dict(value) for value in config["channels"])
+        if trial.channels is None else trial.channels
+    )
+    effective_detectors = (
+        tuple(ComponentSpec.from_dict(value) for value in config["detectors"])
+        if trial.detectors is None else trial.detectors
+    )
+    effective_rewards = (
+        tuple(ComponentSpec.from_dict(value) for value in config["rewards"])
+        if trial.rewards is None else trial.rewards
+    )
+    trial = replace(
+        trial,
+        channels=effective_channels,
+        detectors=effective_detectors,
+        rewards=effective_rewards,
+    )
     check(trial.substrate, "substrate")
+    for spec in trial.channels:
+      check(spec, "channel")
+    for spec in trial.detectors:
+      check(spec, "detector")
+    for spec in trial.rewards:
+      check(spec, "reward")
     for node_index, node in enumerate(nodes):
-      if trial.replay and node.node_id == trial.replay.sender:
+      for tool_alias, tool_spec in node.tools.items():
+        check(
+            tool_spec,
+            "tool",
+            context=PreflightContext(
+                path=(
+                    f"plan.trials[{trial_index}].nodes[{node_index}]"
+                    f".tools.{tool_alias}.config"
+                ),
+                node_id=node.node_id,
+                max_rounds=trial.max_rounds,
+            ),
+        )
+      if paired and node.node_id == paired.sender:
         # 重放实际使用宿主固定动作，不构造原策略，也不要求其运行资源或秘密材料。
         catalog.validate(node.policy, "policy")
         continue
@@ -146,8 +186,10 @@ def prepare_experiment(
           node_id=node.node_id, max_rounds=trial.max_rounds,
           outgoing=tuple(target for source, target in trial.edges if source == node.node_id),
           incoming=tuple(source for source, target in trial.edges if target == node.node_id),
-          private=json_copy(trial.node_contexts.get(node.node_id, {}))))
-      if node.policy.type == "core.llm" and not (trial.replay and node.node_id == trial.replay.sender):
+          private=json_copy(trial.node_contexts.get(node.node_id, {})),
+          tools=tuple(node.tools),
+      ))
+      if node.policy.type == "core.llm" and not (paired and node.node_id == paired.sender):
         known_policy_calls += 1 if "active_round" in node.policy.config else trial.max_rounds
     trials.append(trial)
   evaluators = tuple(plan.evaluators) + tuple(
@@ -164,8 +206,7 @@ def prepare_experiment(
     raise ValueError("结果奖励器 ID 不能重复，请在插件内提供不同命名组件")
   for spec in outcome_rewards:
     check(spec, "outcome_reward")
-  for field_name, kind in (("channels", "channel"), ("detectors", "detector"),
-                            ("rewards", "reward"), ("audit_sinks", "audit")):
+  for field_name, kind in (("audit_sinks", "audit"),):
     for value in config[field_name]:
       check(ComponentSpec.from_dict(value), kind)
   if known_policy_calls > config["runtime"]["max_model_calls"]:

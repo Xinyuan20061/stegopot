@@ -12,6 +12,7 @@ from stegopot import __version__
 from stegopot.bootstrap.experiments.api import prepare_file
 from stegopot.bootstrap.experiments.builtin import builtin_plugin
 from stegopot.bootstrap.experiments.run import run_experiment
+from stegopot.bootstrap.experiments.recompute import recompute_experiment
 from stegopot.bootstrap.experiments.signals import cancellation_signals
 from stegopot.domain.model.diagnostic import PreflightError
 from stegopot.domain.model.execution import CancellationToken
@@ -48,6 +49,9 @@ def _parser() -> argparse.ArgumentParser:
   verify = commands.add_parser("verify", help="离线验证审计日志与封印")
   verify.add_argument("directory", help="已完成或待核验的运行目录")
   verify.add_argument("--expected-seal-sha256", help="事先独立保管的根封印 SHA-256")
+  recompute = commands.add_parser("recompute", help="核验封印和源码后离线复算指标")
+  recompute.add_argument("directory", help="已完成实验的运行目录")
+  recompute.add_argument("--expected-seal-sha256", help="事先独立保管的根封印 SHA-256")
   events = commands.add_parser("events", help="查询审计事件，默认核验封印且只读公开视图")
   events.add_argument("directory", help="实验结果目录")
   events.add_argument("--scope", choices=("public", "research"), default="public", help="research 含私有研究数据，不能直接公开")
@@ -110,6 +114,13 @@ def main(argv: Sequence[str] | None = None) -> int:
       directory = Path(args.directory).expanduser().resolve()
       verify_experiment(directory, expected_seal_sha256=args.expected_seal_sha256)
       payload = {"verified": True, "directory": str(directory)}
+    elif args.command == "recompute":
+      payload = recompute_experiment(
+          args.directory,
+          expected_seal_sha256=args.expected_seal_sha256,
+      )
+      _print_payload(payload, environment)
+      return 0 if payload["verified"] else 1
     elif args.command == "events":
       if not 1 <= args.limit <= 10000:
         raise ValueError("limit 必须为 1 至 10000")

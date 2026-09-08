@@ -107,6 +107,7 @@ class RewardRequest(Mapping[str, Any]):
     actions: 节点 ID 到受限动作摘要的映射。
     messages: 经过环境和信道处理后实际投递的公开消息。
     detections: Detector 对实际投递消息给出的受限风险信号。
+    information: 按 reward 主体授权的类型化信息资产。
 
   本对象实现 Mapping，以兼容插件 API 1.1 中使用
   ``request["messages"]`` 的奖励实现；新代码应优先使用类型化属性。
@@ -116,8 +117,9 @@ class RewardRequest(Mapping[str, Any]):
   actions: Mapping[str, RewardAction]
   messages: Sequence[AgentMessage]
   detections: Sequence[RewardDetectionSignal] = ()
+  information: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
-  _KEYS = ("round_index", "actions", "messages", "detections")
+  _KEYS = ("round_index", "actions", "messages", "detections", "information")
 
   def __post_init__(self) -> None:
     if type(self.round_index) is not int or self.round_index < 0:
@@ -149,6 +151,13 @@ class RewardRequest(Mapping[str, Any]):
     object.__setattr__(self, "actions", MappingProxyType(actions))
     object.__setattr__(self, "messages", messages)
     object.__setattr__(self, "detections", detections)
+    if not isinstance(self.information, Mapping):
+      raise TypeError("RewardRequest.information 必须是映射")
+    object.__setattr__(
+        self,
+        "information",
+        MappingProxyType(json_copy(dict(self.information))),
+    )
 
   def to_dict(self) -> dict[str, Any]:
     """返回兼容旧奖励插件并适合研究审计的公开证据字典。"""
@@ -160,6 +169,7 @@ class RewardRequest(Mapping[str, Any]):
         },
         "messages": [message.to_dict() for message in self.messages],
         "detections": [signal.to_dict() for signal in self.detections],
+        "information": json_copy(dict(self.information)),
     }
 
   def __getitem__(self, key: str) -> Any:
@@ -190,6 +200,7 @@ class EpisodeOutcomeRequest:
       "_episode_id",
       "_result",
       "_truth",
+      "_information",
   )
 
   def __init__(
@@ -200,6 +211,7 @@ class EpisodeOutcomeRequest:
       episode_id: str,
       result: Mapping[str, Any],
       truth: Mapping[str, Any],
+      information: Mapping[str, Any] | None = None,
   ) -> None:
     """创建中央结果奖励请求。
 
@@ -209,6 +221,7 @@ class EpisodeOutcomeRequest:
       episode_id: 当前 Episode 的全局唯一 ID。
       result: 已完成运行的实际结果，不含节点策略内部状态。
       truth: 当前 Episode 的中央真值，只授权给结果奖励器和评价器。
+      information: 按 outcome_reward 主体投影的类型化信息资产。
     """
     self._condition_id = validate_id(condition_id)
     self._session_id = validate_id(session_id)
@@ -217,6 +230,7 @@ class EpisodeOutcomeRequest:
       raise TypeError("EpisodeOutcomeRequest.result/truth 必须是映射")
     self._result = json_copy(dict(result))
     self._truth = json_copy(dict(truth))
+    self._information = json_copy(dict(information or {}))
 
   @property
   def condition_id(self) -> str:
@@ -243,6 +257,11 @@ class EpisodeOutcomeRequest:
     """返回中央真值的独立只读副本。"""
     return MappingProxyType(json_copy(self._truth))
 
+  @property
+  def information(self) -> Mapping[str, Any]:
+    """返回结果奖励器获授权信息的独立只读副本。"""
+    return MappingProxyType(json_copy(self._information))
+
   def to_dict(self) -> dict[str, Any]:
     """返回适合研究审计的中央请求副本。"""
     return {
@@ -251,4 +270,5 @@ class EpisodeOutcomeRequest:
         "episode_id": self.episode_id,
         "result": json_copy(self._result),
         "truth": json_copy(self._truth),
+        "information": json_copy(self._information),
     }

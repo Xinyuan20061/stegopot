@@ -48,6 +48,7 @@ class PreflightContext:
     outgoing: 可发送的邻居 ID。
     incoming: 可接收的邻居 ID。
     private: 当前节点私有材料的独立副本；不得写入诊断文本。
+    tools: 当前节点已授权的工具别名，用于静态检查严格工具动作。
   """
 
   path: str
@@ -56,6 +57,7 @@ class PreflightContext:
   outgoing: tuple[str, ...] = ()
   incoming: tuple[str, ...] = ()
   private: Mapping[str, Any] = field(default_factory=dict)
+  tools: tuple[str, ...] = ()
 
 
 class PreflightError(ValueError):

@@ -13,6 +13,7 @@ StegoPot 核心提供多节点运行、隐写编解码、信息隔离、信道�
 | policy | initial_state / step / close | 节点局部观察与内部状态，返回动作和新状态 |
 | llm | generate / close | 模型消息与调用参数；只有供应商可获授权凭证 |
 | codec | encode / decode / close | 私有输入、实际公开载体、显式预共享材料 |
+| tool | execute / close | 节点允许列表中的通用操作；结果只回到调用节点 |
 | substrate | reset / observe / step / state / close | 世界状态和局部投影，不应自行发起模型请求 |
 | channel | transform(message) | 只改正文或返回 None 阻断，不改通信身份 |
 | detector | reset / detect / close | 只读取最终公开消息，不获得秘密与真值 |
@@ -94,7 +95,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.11,<0.12"]
+dependencies = ["stegopot>=1.0,<2"]
 
 [project.entry-points."stegopot.plugins"]
 example = "stegopot_example.bootstrap.plugin:plugin"
@@ -145,7 +146,7 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 
 ### 供应商凭证
 
-只有 `kind="llm"` 可以声明 `credentials=("api_key_env",)`。
+只有 `kind="llm"` 或 `kind="tool"` 可以声明 `credentials=("api_key_env",)`。
 配置中该字段填写环境变量名称，工厂用
 `context.credential("api_key_env")` 取值；不得把真实密钥写进配置。
 供应商不得自动重试或自行绕过宿主发起额外请求。需要重试的研究策略必须显式声明，
@@ -159,7 +160,7 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 | plugins | 已安装扩展允许列表，可附版本范围；未启用就不可引用 |
 | scenario | 产生独立 Trial 或 Condition/Session/Episode 计划的组件引用，形式为 type/config |
 | seed | 中央计划种子，不自动写入节点观察 |
-| resources | 模型与 codec 资源字典，按声明槽位使用 |
+| resources | 模型、codec 与通用 Tool 资源字典，按声明槽位使用 |
 | policies | 按节点 ID 覆盖场景默认策略 |
 | topology.edges | 覆盖场景有向边；不存在的节点会被拒绝 |
 | channels / detectors / rewards | 按配置顺序执行的逐轮组件列表 |
@@ -232,7 +233,7 @@ catalog 参数注入；此时调用者负责登记全部依赖，框架仍校验
 
 ## 1.1 预检扩展
 
-API 1.1 引入此能力；当前 API 1.3 宿主仍可加载既有 1.0/1.1/1.2 插件。
+API 1.1 引入此能力；当前 API 1.4 宿主仍可加载同一主版本内较早的插件。
 组件可在装饰器增加 preflight=校验函数；数据类配置与工厂保持同一类型。
 回调签名为 preflight(config, context) -> Sequence[Diagnostic]。
 
@@ -246,7 +247,7 @@ API 1.1 引入此能力；当前 API 1.3 宿主仍可加载既有 1.0/1.1/1.2 �
 
 ## 1.2 奖励证据
 
-当前宿主默认声明插件 API 1.3，并继续接受 1.0/1.1/1.2 插件。Reward 的 `score`
+当前宿主默认声明插件 API 1.4，并继续接受同一主版本内较早的插件。Reward 的 `score`
 接收 `RewardRequest`，新插件应优先使用以下只读属性：
 
 | 属性 | 内容 | 明确不包含 |
@@ -255,6 +256,7 @@ API 1.1 引入此能力；当前 API 1.3 宿主仍可加载既有 1.0/1.1/1.2 �
 | `actions` | 节点到 kind/target 的只读映射 | 动作正文和 metadata |
 | `messages` | 实际投递的不可变 AgentMessage | 候选、阻断和干预前正文 |
 | `detections` | 组件 ID、消息 ID、判定、分数和置信度 | reason、metadata、context 和 truth |
+| `information` | 按 reward 主体显式授权的类型化资产 | 任何未授权资产 |
 
 API 1.1 奖励插件仍可用 `request["messages"]`、`request["actions"]` 等键读取
 JSON 副本。Reward 必须返回现有节点 ID 到有限数值的映射；宿主将多个组件结果
@@ -269,6 +271,7 @@ JSON 副本。Reward 必须返回现有节点 ID 到有限数值的映射；宿�
 `outcome_reward.score(request)` 接收 `EpisodeOutcomeRequest`。它只在受信任的中央阶段
 运行，可读取 `condition_id`、`session_id`、`episode_id`、实际 `result` 和当前
 Episode 的 `truth`。`result` 与 `truth` 属性每次访问都返回独立只读 JSON 副本。
+API 1.4 还提供按 `outcome_reward` 主体投影的只读 `information` 属性。
 
 返回值必须是当前 Episode 节点 ID 到有限数值的映射。宿主把多个 OutcomeReward
 结果与逐轮累计奖励相加，只在同一 Session 的下一 Episode 首轮向对应节点投影标量。

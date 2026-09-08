@@ -80,9 +80,13 @@ def verify_experiment(directory: str | Path, *, expected_seal_sha256: str | None
   report = json.loads((root / 'experiment-report.json').read_text(encoding='utf-8'))
   manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
   manifest_version = manifest.get('schema_version')
-  if manifest_version not in {'stegopot.manifest/1', 'stegopot.manifest/2'}:
+  if manifest_version not in {
+      'stegopot.manifest/1',
+      'stegopot.manifest/2',
+      'stegopot.manifest/3',
+  }:
     raise ValueError('未知实验清单版本')
-  if manifest_version == 'stegopot.manifest/2':
+  if manifest_version in {'stegopot.manifest/2', 'stegopot.manifest/3'}:
     if 'threat-model.json' not in seal.get('artifacts', {}):
       raise ValueError('根封印缺少威胁模型工件')
     threat_ref = manifest.get('threat_model', {})
@@ -91,7 +95,12 @@ def verify_experiment(directory: str | Path, *, expected_seal_sha256: str | None
         or threat_ref.get('sha256') != file_digest(threat_path)):
       raise ValueError('实验清单与威胁模型工件不一致')
     threat_model = json.loads(threat_path.read_text(encoding='utf-8'))
-    if threat_model.get('schema_version') != 'stegopot.threat-model/1':
+    allowed_threat_versions = (
+        {'stegopot.threat-model/2'}
+        if manifest_version == 'stegopot.manifest/3'
+        else {'stegopot.threat-model/1', 'stegopot.threat-model/2'}
+    )
+    if threat_model.get('schema_version') not in allowed_threat_versions:
       raise ValueError('未知威胁模型工件版本')
     if threat_model.get('plan_sha256') != digest(manifest.get('plan')):
       raise ValueError('威胁模型与预注册计划不一致')
@@ -102,11 +111,16 @@ def verify_experiment(directory: str | Path, *, expected_seal_sha256: str | None
     } for trial in manifest['plan']['trials']]
     if threat_model.get('topology_sha256') != digest(topology):
       raise ValueError('威胁模型与预注册拓扑不一致')
+    if threat_model.get('schema_version') == 'stegopot.threat-model/2':
+      _verify_information_flows(manifest['plan']['trials'], threat_model)
   if report.get('schema_version') != 'stegopot.report/1':
     raise ValueError('未知实验报告版本')
-  if [item['trial']['trial_id'] for item in report['trials']] != [item['trial_id'] for item in manifest['plan']['trials']]:
+  planned_trials = manifest['plan']['trials']
+  if [item['trial']['trial_id'] for item in report['trials']] != [item['trial_id'] for item in planned_trials]:
     raise ValueError('试验记录与预注册计划不一致')
-  for record in report['trials']:
+  for record, planned in zip(report['trials'], planned_trials):
+    if record['trial'] != planned:
+      raise ValueError('试验执行声明与预注册计划内容不一致')
     name = record['artifact_dir']
     child = root / name
     if Path(name).name != name or child.resolve().parent != root:
@@ -118,3 +132,52 @@ def verify_experiment(directory: str | Path, *, expected_seal_sha256: str | None
     if result != {key: value for key, value in record.items() if key not in {'artifact_dir', 'seal_sha256'}}:
       raise ValueError('根报告与子试验结果不一致')
   return seal
+
+
+def _verify_information_flows(
+    trials: list[dict[str, Any]],
+    threat_model: dict[str, Any],
+) -> None:
+  """验证类型化信息目录与完整计划一致，且威胁模型没有泄露实际值。"""
+  flows = threat_model.get('information_flows')
+  if not isinstance(flows, dict) or set(flows) != {
+      trial['trial_id'] for trial in trials
+  }:
+    raise ValueError('威胁模型的信息流目录与预注册试验不一致')
+  for trial in trials:
+    trial_id = trial['trial_id']
+    information = trial.get('information', {})
+    flow = flows[trial_id]
+    if flow.get('trial_id') != trial_id:
+      raise ValueError('信息流目录包含错误试验 ID')
+    if flow.get('specification_sha256') != digest(information):
+      raise ValueError('信息流声明摘要与预注册信息值不一致')
+    expected_assets = {
+        name: {key: value for key, value in item.items() if key != 'value'}
+        for name, item in information.items()
+    }
+    if flow.get('assets') != expected_assets:
+      raise ValueError('威胁模型信息资产目录不一致或泄露实际值')
+    principals = {
+        principal
+        for item in information.values()
+        for principal in item.get('visible_to', ())
+        if principal != 'all_nodes'
+    }
+    principals.update(
+        'node:' + node['node_id'] for node in trial.get('nodes', ())
+    )
+    expected_views = {
+        principal: [
+            name
+            for name, item in information.items()
+            if principal in item.get('visible_to', ())
+            or (
+                principal.startswith('node:')
+                and 'all_nodes' in item.get('visible_to', ())
+            )
+        ]
+        for principal in sorted(principals)
+    }
+    if flow.get('principal_assets') != expected_views:
+      raise ValueError('威胁模型逐主体信息投影与预注册计划不一致')

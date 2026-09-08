@@ -72,7 +72,7 @@ CLI / prepare_file / run_file
  -> ThreatModelCompiler：将配置和固定计划编译为有效组件视图与摘要
  -> ExecutionBudget：创建全局、试验和节点额度，响应取消与截止时间
  -> run_plan：Run -> Condition -> Session -> Episode，控制状态与失败传播
- -> ComponentSession：为每个 Episode 构造组件，注入已审计、已限额的模型和 codec
+ -> ComponentSession：为每个 Episode 构造组件，注入已审计、已限额的模型、codec 和 Tool
  -> MultiAgentRuntime：局部观察 -> Policy.step -> 候选消息
  -> 环境 -> 信道变换 -> 公开检测 -> Reward -> 下一轮收件箱
  -> OutcomeReward：读取 Episode 结果与 truth，只向同 Session 下一 Episode 返回节点标量
@@ -97,7 +97,7 @@ CLI / prepare_file / run_file
 - OutcomeReward 只在中央 Episode 结束阶段读取 result/truth，不能访问或修改策略状态。
 - 策略状态只在同一 Session 内按节点原样延续；状态不序列化、不审计、不跨 Session。
 - 每个 Episode 都重置 Substrate、收件箱和上一动作；失败会跳过同 Session 的剩余 Episode。
-- 模型和 codec 按 Episode 及节点构造、缓存；所有权由宿主统一管理并逆序关闭。
+- 模型、codec 和 Tool 按 Episode 及节点构造、缓存；所有权由宿主统一管理并逆序关闭。
 - 凭证只传给声明 credentials 的模型工厂，不传给策略、信道或评分器。
 - 内置模型适配不自动重试，不跟随重定向，不把鉴权头或服务端错误正文打印出来。
 - 插件自定义事件进入 plugin.event 命名空间，不能伪造宿主的公开投递事件。
@@ -111,8 +111,8 @@ CLI / prepare_file / run_file
 
 ## 审计契约
 
-标准输出契约为 stegopot.report/1，根清单为 stegopot.manifest/2，威胁模型为
-stegopot.threat-model/1。完整记录包括配置、计划、有效信息边界、组件版本、源码摘要、
+标准输出契约为 stegopot.report/1，根清单为 stegopot.manifest/3，威胁模型为
+stegopot.threat-model/2。完整记录包括配置、计划、有效信息边界、组件版本、源码摘要、
 成功/失败/跳过状态、模型请求和实际回复、工具结果与消息干预。
 CLI 和文件级 API 不能关闭宿主日志；写入失败中止，不生成虚假完整封印。
 公开日志只是白名单投影，不能保证模型主动输出的正文不泄密。
@@ -125,5 +125,5 @@ CLI 和文件级 API 不能关闭宿主日志；写入失败中止，不生成�
 本地具备测试集时，通过 python -m unittest discover -s tests/contracts -v 运行，并额外检查安装包脱离源码目录后能否工作。
 测试结果和临时配置不得回填 configs 或作为框架预置实验发布。
 
-0.11 的参数、状态和调用约定见 [内核控制与审计](kernel.md)，威胁模型见
+1.0 的参数、状态和调用约定见 [内核控制与审计](kernel.md)，威胁模型见
 [威胁模型与信息边界](threat_model.md)。

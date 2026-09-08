@@ -36,7 +36,9 @@ class StegoKitCodec:
     if result.consumed_bits > len(request.bits):
       raise ValueError("工具报告的消耗比特超过输入长度")
     return EncodeResult(Carrier(result.text), result.consumed_bits,
-                        {"algorithm": self._algorithm, "origin": "tool", "token_roundtrip_verified": True})
+                        {"algorithm": self._algorithm, "origin": "tool",
+                         "token_roundtrip_verified": True,
+                         "carrier_token_count": len(tokens)})
 
   def decode(self, request):
     """只对 request.carrier 的实际文本重新分词，显式共享参数须预先配置。"""

@@ -46,6 +46,21 @@ def llm_preflight(config: Mapping[str, Any], context: PreflightContext) -> list[
     issues.append(Diagnostic("action.unbound_target", context.path + ".target",
                              "未启用严格动作模式，target 不会约束模型输出",
                              "指定 action_kind: message 或在策略中处理目标", severity="warning"))
+  elif kind == "tool_call":
+    if config.get("tool") not in context.tools:
+      issues.append(Diagnostic(
+          "tool.not_authorized",
+          context.path + ".tool",
+          "严格工具动作引用了当前节点未授权的工具",
+          "在节点 tools 中声明该别名，或修改 policy.tool",
+      ))
+    if config.get("target") is not None:
+      issues.append(Diagnostic(
+          "tool.has_target",
+          context.path + ".target",
+          "工具动作不能同时指定通信目标",
+          "删除 target；工具结果只返回当前节点",
+      ))
   return issues
 
 
@@ -56,10 +71,10 @@ def scripted_preflight(config: Mapping[str, Any], context: PreflightContext) -> 
   for index, value in enumerate(config["actions"]):
     path = f"{context.path}.actions[{index}]"
     try:
-      action = AgentAction(**value)
+      action = AgentAction.from_dict(value)
     except (TypeError, ValueError):
       issues.append(Diagnostic("action.invalid", path, "动作不满足 AgentAction 契约",
-                               "检查 kind、content、target 和 metadata 的类型"))
+                               "检查 kind、content、target、tool_call 和 metadata 的类型"))
       continue
     if ended or (context.max_rounds is not None and index >= context.max_rounds):
       issues.append(Diagnostic("schedule.unreachable_action", path, "该预设动作不会执行",

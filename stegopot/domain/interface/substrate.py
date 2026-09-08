@@ -24,6 +24,7 @@ class SubstrateResetContext:
     shared_context: 对全部节点可见的结构化背景信息。
     topology: 当前通信拓扑的可序列化快照。
     initial_rewards: 上一 Episode 产生的节点标量反馈；仅在同一 Session 内传递。
+    information: 威胁模型明确授权给当前 Substrate 的类型化信息资产。
   """
 
   task: str
@@ -31,6 +32,7 @@ class SubstrateResetContext:
   shared_context: Mapping[str, Any] = dataclasses.field(default_factory=dict)
   topology: Mapping[str, Any] = dataclasses.field(default_factory=dict)
   initial_rewards: Mapping[str, float] = dataclasses.field(default_factory=dict)
+  information: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
   def __post_init__(self) -> None:
     normalized_task = self.task.strip() if isinstance(self.task, str) else ""
@@ -64,6 +66,11 @@ class SubstrateResetContext:
         self,
         "initial_rewards",
         MappingProxyType({key: float(value) for key, value in rewards.items()}),
+    )
+    object.__setattr__(
+        self,
+        "information",
+        MappingProxyType(dict(self.information)),
     )
 
 

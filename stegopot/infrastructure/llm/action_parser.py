@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from stegopot.domain.model import AgentAction
+from stegopot.domain.model.tool import ToolCallIntent
 
 
 class JsonActionParser:
@@ -56,6 +57,12 @@ class JsonActionParser:
           **metadata,
           "normalized_from": "empty_message",
       })
+    if kind == "tool_call":
+      return AgentAction(
+          kind="tool_call",
+          metadata=metadata,
+          tool_call=ToolCallIntent.from_dict(payload.get("tool_call", {})),
+      )
     return AgentAction(
         kind=kind,
         content=content,

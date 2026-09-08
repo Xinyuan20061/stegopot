@@ -4,7 +4,7 @@
 - [配置与运行](usage.md)：工作区约定、配置字段、模型接入和审计输出。
 - [威胁模型与信息边界](threat_model.md)：组件视图、信任假设、运行时执行与工件核验。
 - [内核控制与审计](kernel.md)：Session/Episode、双反馈闭环、分层预算、取消与因果查询。
-- [接口开发](plugin_development.md)：十一类接口、装饰器、安装发现与资源所有权。
+- [接口开发](plugin_development.md)：十二类接口、装饰器、安装发现与资源所有权。
 - [架构约束](architecture.md)：四层结构、依赖方向、信息边界与调用顺序。
 
 开发约束见 [AGENTS.md](../AGENTS.md)。本目录不保留旧实验记录。

@@ -23,8 +23,10 @@ from stegopot.domain.interface import SubstrateResetContext
 from stegopot.domain.interface import SubstrateStepContext
 from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.interface.execution import ExecutionGuard
+from stegopot.domain.interface.tool import ToolExecutor
 from stegopot.domain.interface.trace import audit_span
 from stegopot.domain.model.execution import ContractViolation, ExecutionStopped, error_details
+from stegopot.domain.model.tool import ToolCallRecord, ToolRequest, ToolResult
 
 TerminationMode = Literal["max_rounds", "any_final", "all_final"]
 
@@ -98,6 +100,7 @@ class RoundRecord:
     rewards: Substrate 为各节点计算的本轮奖励。
     substrate_events: Substrate 在本轮产生的结构化事件。
     substrate_info: Substrate 返回的本轮附加信息。
+    tool_calls: 本轮已经执行、只回到调用节点的工具调用记录。
   """
 
   round_index: int
@@ -107,6 +110,7 @@ class RoundRecord:
   rewards: Mapping[str, float] = dataclasses.field(default_factory=dict)
   substrate_events: Sequence[SubstrateEvent] = ()
   substrate_info: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+  tool_calls: Sequence[ToolCallRecord] = ()
 
   def __post_init__(self) -> None:
     object.__setattr__(self, "steps", tuple(self.steps))
@@ -121,6 +125,7 @@ class RoundRecord:
     object.__setattr__(
         self, "substrate_info", MappingProxyType(dict(self.substrate_info))
     )
+    object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
 
   def to_dict(self) -> dict[str, Any]:
     """返回适合日志记录和 JSON 序列化的轮次字典。"""
@@ -136,6 +141,7 @@ class RoundRecord:
             event.to_dict() for event in self.substrate_events
         ],
         "substrate_info": dict(self.substrate_info),
+        "tool_calls": [item.to_dict() for item in self.tool_calls],
     }
 
 
@@ -153,6 +159,7 @@ class RunResult:
     rewards: 节点 ID 到整次运行累计奖励的映射。
     substrate_events: 整次运行按发生顺序排列的环境事件。
     substrate_state: 运行结束时的环境状态快照。
+    tool_calls: 按执行顺序保存的全部工具调用记录。
   """
 
   task: str
@@ -164,6 +171,7 @@ class RunResult:
   rewards: Mapping[str, float]
   substrate_events: Sequence[SubstrateEvent]
   substrate_state: Mapping[str, Any]
+  tool_calls: Sequence[ToolCallRecord] = ()
 
   def __post_init__(self) -> None:
     object.__setattr__(self, "topology", MappingProxyType(dict(self.topology)))
@@ -177,6 +185,7 @@ class RunResult:
     object.__setattr__(
         self, "substrate_state", MappingProxyType(dict(self.substrate_state))
     )
+    object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
 
   @property
   def completed_rounds(self) -> int:
@@ -198,6 +207,7 @@ class RunResult:
             event.to_dict() for event in self.substrate_events
         ],
         "substrate_state": dict(self.substrate_state),
+        "tool_calls": [item.to_dict() for item in self.tool_calls],
     }
 
 
@@ -218,6 +228,7 @@ class MultiAgentRuntime:
       substrate: Substrate,
       audit_sink: AuditSink | None = None,
       control: ExecutionGuard | None = None,
+      tools: Mapping[str, Mapping[str, ToolExecutor]] | None = None,
   ) -> None:
     """初始化多智能体运行器。
 
@@ -229,6 +240,7 @@ class MultiAgentRuntime:
       substrate: 已由应用层注入的环境规则实现。
       audit_sink: 可选审计接收器；写入失败中止运行，避免无记录执行。
       control: 可选宿主预算与取消接口；不进入节点观察，不拥有其生命周期。
+      tools: 节点 ID 到授权工具别名及执行器的映射；结果只返回对应节点。
     """
     self._nodes = dict(nodes)
     self._topology = topology.copy()
@@ -239,7 +251,12 @@ class MultiAgentRuntime:
     self._substrate = substrate
     self._audit_sink = audit_sink
     self._control = control
+    self._tools = {
+        node_id: dict(values) for node_id, values in (tools or {}).items()
+    }
     self._validate_nodes()
+    if set(self._tools) - set(self._nodes):
+      raise ValueError("工具授权引用未知节点")
     self._router = MessageRouter(self._topology)
 
   @property
@@ -327,10 +344,14 @@ class MultiAgentRuntime:
     previous_actions: dict[str, AgentAction | None] = {
         node_id: None for node_id in self._topology.nodes
     }
+    tool_inboxes: dict[str, list[ToolCallRecord]] = {
+        node_id: [] for node_id in self._topology.nodes
+    }
     final_answers: dict[str, str] = {}
     transcript: list[AgentMessage] = []
     round_records: list[RoundRecord] = []
     substrate_events: list[SubstrateEvent] = []
+    tool_calls: list[ToolCallRecord] = []
     total_rewards = {
         node_id: 0.0 for node_id in self._topology.nodes
     }
@@ -355,6 +376,8 @@ class MultiAgentRuntime:
               topology=self._topology, task=task.strip(), shared_context=context,
               environment=self._substrate.observe(node_id), round_index=round_index,
               inbox=tuple(inboxes[node_id]), previous_action=previous_actions[node_id],
+              tool_results=tuple(tool_inboxes[node_id]),
+              available_tools=tuple(sorted(self._tools.get(node_id, {}))),
           ))
           if self._control is not None:
             self._control.check_size(observation, kind="context")
@@ -381,6 +404,62 @@ class MultiAgentRuntime:
 
       candidate_messages: list[AgentMessage] = []
       routing_errors: list[str] = []
+      next_tool_inboxes: dict[str, list[ToolCallRecord]] = {
+          node_id: [] for node_id in self._topology.nodes
+      }
+      round_tool_calls = []
+      for node_id, action in actions.items():
+        if action.kind != "tool_call":
+          continue
+        intent = action.tool_call
+        if intent is None:
+          raise ContractViolation("tool_call 动作缺少工具调用意图")
+        try:
+          executor = self._tools.get(node_id, {}).get(intent.tool)
+          if executor is None:
+            raise ContractViolation(
+                f"节点 {node_id} 未获得工具 {intent.tool} 的调用权限"
+            )
+          request = ToolRequest(
+              operation=intent.operation,
+              arguments=intent.arguments,
+          )
+          with audit_span(
+              self._audit_sink,
+              "tool.execute",
+              actor=node_id,
+              round_index=round_index,
+              parent_span_id=decision_spans.get(node_id),
+          ):
+            result = executor.execute(request)
+          if not isinstance(result, ToolResult):
+            raise ContractViolation("工具必须返回 ToolResult")
+          record = ToolCallRecord(
+              node_id=node_id,
+              tool=intent.tool,
+              operation=intent.operation,
+              result=result,
+          )
+        except ExecutionStopped:
+          raise
+        except Exception as exc:
+          if self._config.fail_fast:
+            raise
+          record = ToolCallRecord(
+              node_id=node_id,
+              tool=intent.tool,
+              operation=intent.operation,
+              error=error_details(exc)["code"],
+          )
+        round_tool_calls.append(record)
+        tool_calls.append(record)
+        next_tool_inboxes[node_id].append(record)
+        self._audit(
+            "runtime.tool_result",
+            actor=node_id,
+            round_index=round_index,
+            data={"tool_call": record.to_dict()},
+        )
       for sender, action in actions.items():
         try:
           with audit_span(self._audit_sink, "message.route", actor=sender, round_index=round_index,
@@ -440,8 +519,10 @@ class MultiAgentRuntime:
           rewards=substrate_result.rewards,
           substrate_events=substrate_result.events,
           substrate_info=substrate_result.info,
+          tool_calls=round_tool_calls,
       ))
       inboxes = next_inboxes
+      tool_inboxes = next_tool_inboxes
 
       if substrate_result.done:
         termination_reason = (
@@ -463,6 +544,7 @@ class MultiAgentRuntime:
         rewards=total_rewards,
         substrate_events=substrate_events,
         substrate_state=self._substrate.state(),
+        tool_calls=tool_calls,
     )
 
   def close(self) -> None:
@@ -589,4 +671,10 @@ def _action_to_dict(action: AgentAction) -> dict[str, Any]:
       "content": action.content,
       "target": action.target,
       "metadata": dict(action.metadata),
+      "communication": (
+          None
+          if action.communication is None
+          else action.communication.to_dict()
+      ),
+      "tool_call": None if action.tool_call is None else action.tool_call.to_dict(),
   }

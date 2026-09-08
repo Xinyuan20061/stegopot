@@ -39,6 +39,8 @@ class DefaultObservationBuilder(ObservationBuilder):
         },
         "inbox": [message.to_dict() for message in context.inbox],
         "previous_action": self._action_to_dict(context.previous_action),
+        "tool_results": [item.to_dict() for item in context.tool_results],
+        "available_tools": list(context.available_tools),
         "shared_context": dict(context.shared_context),
         "environment": dict(context.environment),
     }
@@ -53,4 +55,12 @@ class DefaultObservationBuilder(ObservationBuilder):
         "content": action.content,
         "target": action.target,
         "metadata": dict(action.metadata),
+        "communication": (
+            None
+            if action.communication is None
+            else action.communication.to_dict()
+        ),
+        "tool_call": (
+            None if action.tool_call is None else action.tool_call.to_dict()
+        ),
     }

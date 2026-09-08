@@ -21,7 +21,7 @@ from stegopot.bootstrap.experiments.runtime import build_runtime
 from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.interface.execution import ExecutionGuard
 from stegopot.domain.model.execution import CancellationToken, ExecutionStopped, error_details
-from stegopot.domain.model.experiment import ComponentSpec, TrialSpec
+from stegopot.domain.model.experiment import ComponentSpec, PairedCarrier, TrialSpec
 from stegopot.infrastructure.llm.audit import CallBudget
 from stegopot.infrastructure.recorders.audit.journal import AuditJournal
 from stegopot.infrastructure.recorders.audit.integrity import file_digest
@@ -85,7 +85,7 @@ def run_experiment(
     threat_model = prepared.threat_model.to_dict()
     journal.write_artifact("threat-model.json", threat_model)
     threat_model_path = directory / "threat-model.json"
-    manifest = {"schema_version": "stegopot.manifest/2", "run_id": run_id,
+    manifest = {"schema_version": "stegopot.manifest/3", "run_id": run_id,
                 "config": config, "plan": prepared.plan.to_dict(),
                 "plugins": prepared.catalog.describe(), "sources": prepared.catalog.source_fingerprints(),
                 "environment": environment_manifest(),
@@ -104,7 +104,7 @@ def run_experiment(
 
     def execute(
         trial: TrialSpec,
-        carrier: str | None,
+        carrier: PairedCarrier | None,
         skip: str | None,
         lifecycle: EpisodeExecutionContext,
     ) -> TrialExecution:
@@ -112,7 +112,7 @@ def run_experiment(
 
       参数：
         trial: 当前 Trial 或兼容表示的 Episode 声明。
-        carrier: 独立配对重放使用的唯一消息正文。
+        carrier: 独立配对反事实使用的源载体及其完整来源标识。
         skip: 上游失败、预算停止等宿主跳过原因。
         lifecycle: 当前 Condition、Session、Episode 身份和前序内存数据。
 
@@ -158,7 +158,7 @@ def run_experiment(
                 components.adopt(sink_session)
                 fanout.sinks.append(sink_session.create(ComponentSpec.from_dict(value), "audit"))
               runtime = build_runtime(trial, session=components, audit=audit, config=config,
-                                      replay_carrier=carrier,
+                                      paired_carrier=carrier,
                                       threat_model=prepared.threat_model, control=guard)
               outcome_rewards = [
                   (spec.type, components.create(spec, "outcome_reward"))
@@ -193,6 +193,19 @@ def run_experiment(
               record = dict(execution.record)
               record.update(error=stopped, errors=[stopped])
               execution = TrialExecution(record=record)
+          if carrier is not None:
+            record = dict(execution.record)
+            counterfactual = dict(record.get("counterfactual") or {})
+            counterfactual.update({
+                "source_message_id": carrier.source_message_id,
+                "carrier_sha256": carrier.sha256,
+            })
+            record["counterfactual"] = counterfactual
+            execution = TrialExecution(
+                record=record,
+                policy_states=execution.policy_states,
+                feedback=execution.feedback,
+            )
           try:
             components.close()
           except Exception as exc:

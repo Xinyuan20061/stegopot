@@ -16,6 +16,7 @@
 | schema [--component ID] | 输出顶层或指定内置组件的严格模式 |
 | plugins list / inspect ID | 查询安装元数据或显式加载指定插件的接口描述 |
 | verify 运行目录 | 离线核验全部关联报告和封印 |
+| recompute 运行目录 | 核验封印和源码指纹后离线复算全部评价指标 |
 | events 运行目录 | 默认核验后查询公开日志，可显式选择 research 和过滤条件 |
 
 名称是相对于 configs 的路径，通常省略后缀，例如 configs/team/study.yaml 对应 team/study。
@@ -63,7 +64,7 @@ core.scripted 是通用确定性策略，不是 LLM；core.echo 只用于规则�
 | scenario | 必填，场景的 type/config，返回完整计划而不自行执行 |
 | plugins | 独立安装插件的显式允许列表，可指定版本范围 |
 | seed | 中央种子，默认 0，不自动暴露给节点，不保证服务端采样确定性 |
-| resources | 命名的 llm/codec 资源，通过策略声明槽位注入 |
+| resources | 命名的 llm/codec/tool 资源，通过组件声明槽位注入 |
 | policies | 按节点 ID 覆盖场景的策略 |
 | topology.edges | 覆盖场景的有向边，不允许不存在的节点 |
 | channels | 按声明顺序执行的公开正文干预 |
@@ -77,7 +78,8 @@ core.scripted 是通用确定性策略，不是 LLM；core.echo 只用于规则�
 | audit | 只允许 required=true、profile=research，不可关闭审计 |
 
 core.explicit 的可选参数还有 repeat（独立重复次数）、substrate（环境组件）、
-shared_context（公开材料）、node_contexts（按节点隔离的私有材料）、truth（中央评分真值）。
+shared_context（公开材料）、node_contexts（按节点隔离的私有材料）、truth（中央评分真值）、
+information（类型化信息资产）以及 Trial 级 channels/detectors/rewards。
 max_rounds 属于场景轮数，runtime.max_rounds 是宿主上限；后者不会自动延长实验。
 参数必须符合 schema，拒绝未知字段、重复键、YAML 别名和超过 2 MB 的配置文件。
 不执行配置中的 Python 表达式，不插值任意环境变量，更不会把全部 .env 写入配置清单。
@@ -206,7 +208,7 @@ base_url 必须是无鉴权、查询参数或片段的 API 根地址，适配器
 thinking 和 reasoning_effort 仅在服务支持时填写；不兼容 JSON 模式时可选 response_format: text。
 客户端不跟随重定向、不自动重试，失败真实记录；一次 generate 最多一次 HTTP 请求。
 宿主限制调用数与输出 token，超时是连接/读超时，不是实验强制终止机制。
-0.11 另提供节点/Episode 调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
+1.0 另提供节点/Episode 调用额度、通用工具调用、上下文与正文大小限制，以及协作式取消。
 参数、默认值、错误码和取消示例见 [内核控制与审计](kernel.md)。
 
 ## 核心隐写
@@ -237,6 +239,7 @@ research 为私有研究数据，公开日志也应检查模型正文是否主�
 ```powershell
 python -m stegopot verify outputs/<run-id>
 python -m stegopot verify outputs/<run-id> --expected-seal-sha256 <独立保存的哈希>
+python -m stegopot recompute outputs/<run-id>
 ```
 
 不能把审计写入失败后的未封印目录当成完整实验。哈希链不是数字签名，

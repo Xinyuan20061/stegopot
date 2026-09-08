@@ -1,6 +1,6 @@
 # 威胁模型与信息边界
 
-本页对应 StegoPot 0.11.0 的 `stegopot.threat-model/1` 契约。它把实验中的
+本页对应 StegoPot 1.0.0 的 `stegopot.threat-model/2` 契约。它把实验中的
 组件可见信息、信任前提和审计范围编译成运行前固定的 `ThreatModelManifest`。
 
 ## 保证范围
@@ -59,6 +59,11 @@ threat_model:
 | Public Audit | 拓扑、实际投递消息和最小运行状态 | 提示、私有观察、调用链、真值和工具私有结果 |
 | Research Audit | 计划、组件调用、实际结果与失败 | API 密钥等基础设施凭证会被脱敏 |
 
+1.0 的 `information` 资产进一步提供逐主体、默认拒绝的运行时投影。类别包括
+`public`、`agent_private`、`secret_payload`、`decoder_private`、`monitor_visible`、
+`evaluator_only` 和 `research_only`。类别规定可授权上限，`visible_to` 不能扩大该上限。
+威胁模型只记录不含值的资产目录和含值声明摘要，实际值只保留在研究计划中。
+
 `shared_context` 的含义就是对全部节点公开。需要仅向一个节点提供的材料必须放在
 `node_contexts.<node_id>`；只用于中央评分的标签必须放在 `truth`。
 
@@ -105,8 +110,9 @@ Reward 只接收最终消息和经过字段裁剪的 Detector 信号；Agent 不
 
 ## 隐写语义
 
-StegoPot 不要求策略返回 `StegoAction` 或声明“正在隐写”。所有对外传输仍使用普通
-`AgentAction.message`，避免把实验真值变成运行时可见的 oracle 标签。
+StegoPot 不要求普通策略声明“正在隐写”。所有对外传输仍使用普通消息正文；
+普通或 LLM 通信标记为 `opaque`，显式受控 codec 通信标记为 `instrumented`。
+来源声明只进入宿主研究链路，不投递给其他节点、信道或检测器。
 
 工具化隐写实验可以由 Policy 调用注入的 `StegoCodec`，将生成的 Carrier 作为普通
 消息发送；编码和解码事实只进入研究审计。涌现隐写实验则可以完全不调用 Codec，
@@ -127,6 +133,8 @@ outputs/<run-id>/threat-model.json
 - `manifest.json` 引用的摘要与文件一致；
 - `plan_sha256` 与预注册计划一致；
 - `topology_sha256` 与计划中的全部节点和有向边一致；
+- 类型化信息目录、逐主体投影和含值声明摘要与预注册计划一致；
+- 每条实际执行 Trial 声明与预注册 Trial 内容逐项一致；
 - 日志、报告和各子试验封印仍满足原有完整性契约。
 
 这些检查证明工件内部一致，不能替代数字签名、可信时间戳或独立保存的根哈希。

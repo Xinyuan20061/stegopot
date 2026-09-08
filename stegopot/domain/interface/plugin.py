@@ -9,10 +9,10 @@ from stegopot.domain.model.experiment import validate_id
 from stegopot.domain.model.diagnostic import Diagnostic, PreflightContext
 
 
-API_VERSION = "1.3"
+API_VERSION = "1.4"
 COMPONENT_KINDS = frozenset({"scenario", "policy", "llm", "substrate", "channel",
                              "codec", "detector", "reward", "outcome_reward",
-                             "evaluator", "audit"})
+                             "evaluator", "tool", "audit"})
 
 
 class BuildContext(Protocol):
@@ -63,10 +63,10 @@ class ComponentDefinition:
     validate_id(self.component_id)
     if self.kind not in COMPONENT_KINDS or not callable(self.factory):
       raise ValueError("无效组件类型或工厂")
-    if set(self.references.values()) - {"llm", "codec"}:
-      raise ValueError("组件依赖只能引用显式声明的 llm/codec 资源")
-    if self.credentials and self.kind != "llm":
-      raise ValueError("只有模型供应商工厂可以接收基础设施凭证")
+    if set(self.references.values()) - {"llm", "codec", "tool"}:
+      raise ValueError("组件依赖只能引用显式声明的 llm/codec/tool 资源")
+    if self.credentials and self.kind not in {"llm", "tool"}:
+      raise ValueError("只有模型或工具工厂可以接收基础设施凭证")
     if self.preflight is not None and not callable(self.preflight):
       raise TypeError("preflight 必须是纯校验函数")
 

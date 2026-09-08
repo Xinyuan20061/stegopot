@@ -49,12 +49,18 @@ class PromptBuilder:
             (
                 'JSON 字段固定为：'
                 '{"kind": 动作类型, "content": 内容, '
-                '"target": 目标, "metadata": 元数据对象}。'
+                '"target": 目标, "metadata": 元数据对象, '
+                '"tool_call": 可选工具调用}。'
             ),
             (
-                'kind 可使用 "message"、"wait" 或 "final_answer"。'
+                'kind 可使用 "message"、"tool_call"、"wait" 或 "final_answer"。'
                 '发送消息时，target 必须是观察中列出的 outgoing_neighbors；'
                 'target 为 null 或 "*" 表示向全部出邻居广播。'
+            ),
+            (
+                '调用工具时，content 和 target 必须为 null，tool_call 必须是 '
+                '{"tool": 已授权别名, "operation": 操作名, "arguments": 参数对象}；'
+                '工具结果会在下一轮自己的 tool_results 中出现。'
             ),
             (
                 '没有需要发送的内容时使用 wait；任务已经完成时使用 '

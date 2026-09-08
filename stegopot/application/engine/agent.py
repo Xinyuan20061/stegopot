@@ -106,8 +106,10 @@ class AgentNode:
       raise ContractViolation("动作类型、正文和目标必须满足字符串字段契约")
     try:
       json_copy(dict(action.metadata))
+      if action.tool_call is not None:
+        json_copy(action.tool_call.to_dict())
     except (TypeError, ValueError) as exc:
-      raise ContractViolation("动作元数据必须可标准 JSON 序列化") from exc
+      raise ContractViolation("动作元数据和工具参数必须可标准 JSON 序列化") from exc
     self._state = next_state
     return action
 

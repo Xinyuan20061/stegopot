@@ -6,12 +6,33 @@ from typing import Any
 
 from stegopot.bootstrap.experiments.prepare import PreparedExperiment, prepare_experiment
 from stegopot.bootstrap.experiments.run import run_experiment
+from stegopot.bootstrap.experiments.recompute import recompute_experiment
 from stegopot.domain.model.execution import CancellationToken
 from stegopot.domain.model.diagnostic import Diagnostic
 from stegopot.infrastructure.settings.diagnostics import diagnose_resources
 from stegopot.infrastructure.plugins.catalog import PluginCatalog
 from stegopot.infrastructure.settings.experiment import load_config
 from stegopot.infrastructure.settings.workspace import ExperimentWorkspace
+
+
+def recompute_directory(
+    directory: str | Path,
+    *,
+    expected_seal_sha256: str | None = None,
+) -> dict[str, Any]:
+  """离线核验并复算已有实验指标。
+
+  参数：
+    directory: 已封印的标准实验运行目录。
+    expected_seal_sha256: 可选的外部根封印哈希锚点。
+
+  返回：
+    复算一致性报告；本函数不修改原实验工件。
+  """
+  return recompute_experiment(
+      directory,
+      expected_seal_sha256=expected_seal_sha256,
+  )
 
 
 def prepare_file(

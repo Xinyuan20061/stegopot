@@ -10,6 +10,8 @@ from typing import Any
 from stegopot.domain.model import AgentAction
 from stegopot.domain.model import AgentMessage
 from stegopot.domain.model import AgentTopology
+from stegopot.domain.model.tool import ToolCallRecord
+from stegopot.domain.model.tool import ToolCallRecord
 
 
 @dataclasses.dataclass(frozen=True)
@@ -30,6 +32,10 @@ class ObservationContext:
     round_index: 当前同步轮次，从 0 开始。
     inbox: 上一轮投递到当前节点的消息。
     previous_action: 当前节点上一轮动作；第一轮为空。
+    tool_results: 当前节点上一轮工具调用结果；其他节点无法读取。
+    available_tools: 当前节点可以调用的工具别名，不包含其他节点授权。
+    available_tools: 当前节点可以调用的工具别名，不包含其他节点授权。
+    tool_results: 当前节点上一轮工具调用结果；其他节点无法读取。
   """
 
   node_id: str
@@ -42,6 +48,10 @@ class ObservationContext:
   round_index: int
   inbox: Sequence[AgentMessage]
   previous_action: AgentAction | None
+  tool_results: Sequence[ToolCallRecord] = ()
+  available_tools: Sequence[str] = ()
+  available_tools: Sequence[str] = ()
+  tool_results: Sequence[ToolCallRecord] = ()
 
 
 class ObservationBuilder(metaclass=abc.ABCMeta):

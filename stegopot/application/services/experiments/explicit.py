@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from stegopot.domain.model.experiment import ComponentSpec, ExperimentPlan, NodeSpec, TrialSpec
+from stegopot.domain.model.information import InformationAsset
 
 
 class ExplicitScenario:
@@ -16,15 +17,36 @@ class ExplicitScenario:
   def plan(self, seed: int) -> ExperimentPlan:
     """生成固定计划；seed 仅供扩展使用，不写入节点共享上下文。"""
     data = self._config
-    nodes = [NodeSpec(item["id"], item.get("role", item["id"]),
-                      ComponentSpec.from_dict(item["policy"])) for item in data["nodes"]]
+    nodes = [NodeSpec(
+        item["id"],
+        item.get("role", item["id"]),
+        ComponentSpec.from_dict(item["policy"]),
+        {
+            name: ComponentSpec.from_dict(spec)
+            for name, spec in item.get("tools", {}).items()
+        },
+    ) for item in data["nodes"]]
     trials = [TrialSpec(
         trial_id=f"trial-{index + 1:04d}", task=data["task"], nodes=nodes, edges=data["edges"],
         substrate=ComponentSpec.from_dict(data.get("substrate", {"type": "core.communication"})),
         shared_context=data.get("shared_context", {}), node_contexts=data.get("node_contexts", {}),
         truth=data.get("truth", {}), max_rounds=data.get("max_rounds", 2),
+        information=tuple(
+            InformationAsset.from_dict(name, value)
+            for name, value in data.get("information", {}).items()
+        ),
+        channels=_components(data.get("channels")),
+        detectors=_components(data.get("detectors")),
+        rewards=_components(data.get("rewards")),
     ) for index in range(data.get("repeat", 1))]
     return ExperimentPlan(trials, (ComponentSpec("core.metrics"),))
+
+
+def _components(values: Sequence[Mapping[str, Any]] | None):
+  """将可选组件配置转换为 ComponentSpec 元组并保留 None 继承语义。"""
+  if values is None:
+    return None
+  return tuple(ComponentSpec.from_dict(value) for value in values)
 
 
 class BasicEvaluator:

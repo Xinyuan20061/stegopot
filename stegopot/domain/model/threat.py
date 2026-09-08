@@ -8,6 +8,8 @@ import re
 from types import MappingProxyType
 from typing import Any
 
+from stegopot.domain.model.information import InformationFlowView
+
 
 TRUSTED_IN_PROCESS = "trusted_in_process"
 PUBLIC_AUDIT_PROFILE = "minimal"
@@ -210,6 +212,7 @@ class ThreatModelManifest:
     assumptions: 该清单不提供的安全保证和实验前提。
     plan_sha256: 完整 ExperimentPlan 规范 JSON 的 SHA-256。
     topology_sha256: 全部试验节点与有向边快照的 SHA-256。
+    information_flows: Trial ID 到逐主体信息目录的映射，不包含实际值。
   """
 
   schema_version: str
@@ -222,9 +225,13 @@ class ThreatModelManifest:
   assumptions: Sequence[str]
   plan_sha256: str
   topology_sha256: str
+  information_flows: Mapping[str, InformationFlowView] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
-    if self.schema_version != "stegopot.threat-model/1":
+    if self.schema_version not in {
+        "stegopot.threat-model/1",
+        "stegopot.threat-model/2",
+    }:
       raise ValueError("不支持的威胁模型清单版本")
     if self.trust_model != TRUSTED_IN_PROCESS:
       raise ValueError("威胁模型清单包含未实现的信任方式")
@@ -240,6 +247,29 @@ class ThreatModelManifest:
     object.__setattr__(self, "component_views", MappingProxyType(normalized))
     object.__setattr__(self, "enforced_boundaries", tuple(self.enforced_boundaries))
     object.__setattr__(self, "assumptions", tuple(self.assumptions))
+    flows = dict(self.information_flows)
+    if any(
+        not isinstance(value, InformationFlowView)
+        or key != value.trial_id
+        for key, value in flows.items()
+    ):
+      raise TypeError("information_flows 必须按 trial_id 保存 InformationFlowView")
+    object.__setattr__(self, "information_flows", MappingProxyType(flows))
+
+  def visible_assets(self, trial_id: str, principal: str) -> tuple[str, ...]:
+    """返回 principal 在 trial_id 中获准读取的信息名称。
+
+    参数：
+      trial_id: 当前 Trial 或 Episode ID。
+      principal: 标准组件主体或 ``node:<id>`` 节点主体。
+
+    返回：
+      信息名称元组；没有显式信息时为空。
+    """
+    flow = self.information_flows.get(trial_id)
+    if flow is None:
+      return ()
+    return tuple(flow.principal_assets.get(principal, ()))
 
   def to_dict(self) -> dict[str, Any]:
     """返回可封印、可比较的标准威胁模型工件。"""
@@ -259,4 +289,8 @@ class ThreatModelManifest:
         "assumptions": list(self.assumptions),
         "plan_sha256": self.plan_sha256,
         "topology_sha256": self.topology_sha256,
+        "information_flows": {
+            trial_id: flow.to_dict()
+            for trial_id, flow in self.information_flows.items()
+        },
     }

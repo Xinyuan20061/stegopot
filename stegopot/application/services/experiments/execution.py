@@ -155,6 +155,7 @@ def execute_trial(
         episode_id=lifecycle.episode_id,
         result=result,
         truth=trial.truth,
+        information=trial.information_for("outcome_reward"),
     )
     for name, reward in outcome_rewards:
       try:
@@ -190,7 +191,9 @@ def execute_trial(
       if control is not None:
         control.checkpoint()
       with audit_span(audit, "evaluator.evaluate"):
-        metrics[name] = json_copy(evaluator.evaluate(trial, json_copy(result)))
+        metrics[name] = json_copy(evaluator.evaluate(
+            trial.for_principal("evaluator"), json_copy(result)
+        ))
       if control is not None:
         control.checkpoint()
     except ExecutionStopped as exc:
@@ -223,7 +226,16 @@ def execute_trial(
       "outcome_rewards": outcome_values,
       "initial_feedback": dict(lifecycle.initial_feedback),
       "feedback": feedback,
-      "message_source": "paired_replay" if trial.replay else "policy",
+      "message_source": (
+          "paired_replay"
+          if trial.replay is not None
+          else "paired_counterfactual" if trial.counterfactual is not None else "policy"
+      ),
+      "counterfactual": None if trial.paired_spec is None else {
+          "group_id": trial.paired_spec.effective_group_id,
+          "treatment_id": trial.paired_spec.treatment_id,
+          "source_trial": trial.paired_spec.source_trial,
+      },
   }
   audit.emit({
       "kind": "trial.completed",

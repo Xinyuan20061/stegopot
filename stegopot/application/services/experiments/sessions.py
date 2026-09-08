@@ -13,6 +13,7 @@ from stegopot.domain.model.experiment import (
     SessionSpec,
     validate_id,
 )
+from stegopot.domain.model.information import InformationAsset
 
 
 class SessionScenario:
@@ -49,6 +50,10 @@ class SessionScenario:
               node_id=item["id"],
               role=item.get("role", item["id"]),
               policy=ComponentSpec.from_dict(item["policy"]),
+              tools={
+                  name: ComponentSpec.from_dict(spec)
+                  for name, spec in item.get("tools", {}).items()
+              },
           )
           for item in condition["nodes"]
       )
@@ -79,6 +84,13 @@ class SessionScenario:
               node_contexts=item.get("node_contexts", {}),
               truth=item.get("truth", {}),
               max_rounds=item.get("max_rounds", 2),
+              information=tuple(
+                  InformationAsset.from_dict(name, value)
+                  for name, value in item.get("information", {}).items()
+              ),
+              channels=_components(item.get("channels")),
+              detectors=_components(item.get("detectors")),
+              rewards=_components(item.get("rewards")),
           ))
         sessions.append(SessionSpec(
             session_id=session_id,
@@ -87,3 +99,10 @@ class SessionScenario:
             persist_policy_state=persist,
         ))
     return ExperimentPlan(sessions=tuple(sessions))
+
+
+def _components(values):
+  """转换 Episode 的可选组件覆盖；None 表示继承运行配置。"""
+  if values is None:
+    return None
+  return tuple(ComponentSpec.from_dict(value) for value in values)

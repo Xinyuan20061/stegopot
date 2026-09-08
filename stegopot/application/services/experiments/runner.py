@@ -16,17 +16,19 @@ from stegopot.domain.interface.trace import audit_span
 from stegopot.domain.model.execution import ExecutionStopped, error_details
 from stegopot.domain.model.experiment import (
     ExperimentPlan,
+    PairedCarrier,
     SessionSpec,
     TrialSpec,
     json_copy,
 )
+from stegopot.domain.model.communication import CommunicationIntent, carrier_sha256
 
 
 def run_plan(
     plan: ExperimentPlan,
     *,
     execute: Callable[
-        [TrialSpec, str | None, str | None, EpisodeExecutionContext],
+        [TrialSpec, PairedCarrier | None, str | None, EpisodeExecutionContext],
         TrialExecution,
     ],
     evaluators: Sequence[tuple[str, Evaluator]],
@@ -59,7 +61,7 @@ def run_plan(
   by_id: dict[str, dict[str, Any]] = {}
 
   for trial in plan.trials:
-    carrier, skip = _replay_input(trial, by_id)
+    carrier, skip = _counterfactual_input(trial, by_id)
     member = membership.get(trial.trial_id)
     lifecycle = _lifecycle_context(
         trial,
@@ -119,23 +121,49 @@ def run_plan(
   }
 
 
-def _replay_input(
+def _counterfactual_input(
     trial: TrialSpec,
     completed: Mapping[str, Mapping[str, Any]],
-) -> tuple[str | None, str | None]:
-  """从已完成记录提取唯一配对正文；普通执行单元返回两个空值。"""
-  if trial.replay is None:
+) -> tuple[PairedCarrier | None, str | None]:
+  """从已完成记录提取固定源载体；普通执行单元返回两个空值。"""
+  paired = trial.paired_spec
+  if paired is None:
     return None, None
-  source = completed[trial.replay.source_trial]
+  source = completed[paired.source_trial]
   candidates = [
       message
       for message in source["result"].get("messages", [])
-      if message["sender"] == trial.replay.sender
-      and message["recipient"] == trial.replay.recipient
+      if message["sender"] == paired.sender
+      and message["recipient"] == paired.recipient
+      and (
+          paired.source_message_id is None
+          or message["message_id"] == paired.source_message_id
+      )
   ]
   if source["status"] != "completed" or len(candidates) != 1:
     return None, "source_trial_has_no_unique_completed_carrier"
-  return candidates[0]["content"], None
+  message = candidates[0]
+  lineages = [
+      item
+      for item in source["result"].get("substrate_state", {}).get("communications", ())
+      if item.get("message_id") == message["message_id"]
+  ]
+  communication = (
+      CommunicationIntent.from_dict(lineages[0]["intent"])
+      if len(lineages) == 1 and isinstance(lineages[0].get("intent"), Mapping)
+      else CommunicationIntent.opaque(message["content"])
+  )
+  return PairedCarrier(
+      source_trial=paired.source_trial,
+      source_message_id=message["message_id"],
+      sender=message["sender"],
+      recipient=message["recipient"],
+      content=message["content"],
+      sha256=carrier_sha256(message["content"]),
+      group_id=paired.effective_group_id,
+      treatment_id=paired.treatment_id,
+      communication=communication,
+  ), None
 
 
 def _lifecycle_context(

@@ -12,6 +12,7 @@ from stegopot.domain.model.execution import ContractViolation
 from stegopot.domain.model.experiment import ComponentSpec, json_copy
 from stegopot.infrastructure.llm.audit import AuditedLLMClient, CallBudget
 from stegopot.infrastructure.llm.codec_audit import AuditedCodec
+from stegopot.infrastructure.tools.audit import AuditedTool
 from stegopot.infrastructure.plugins.catalog import PluginCatalog
 
 
@@ -125,7 +126,8 @@ class ComponentSession:
         "channel": ("transform",), "codec": ("encode", "decode", "close"),
         "detector": ("reset", "detect", "close"), "reward": ("score",),
         "outcome_reward": ("score",),
-        "evaluator": ("evaluate", "summarize"), "audit": ("emit",),
+        "evaluator": ("evaluate", "summarize"),
+        "tool": ("execute", "close"), "audit": ("emit",),
     }[kind]
     if any(not callable(getattr(instance, method, None)) for method in required):
       raise ContractViolation(f"组件 {spec.type} 没有满足 {kind} 的方法契约")
@@ -136,6 +138,9 @@ class ComponentSession:
     elif kind == "codec":
       instance = AuditedCodec(instance, audit=self._audit, component_id=spec.type,
                               node_id=node_id, control=self._control)
+    elif kind == "tool":
+      instance = AuditedTool(instance, audit=self._audit, component_id=spec.type,
+                             node_id=node_id, control=self._control)
     self._audit.emit({"kind": "component.ready", "data": {"component": spec.type, "kind": kind}})
     return instance
 

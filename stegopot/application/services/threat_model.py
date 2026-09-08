@@ -7,6 +7,11 @@ import json
 from typing import Any
 
 from stegopot.domain.model.experiment import ExperimentPlan
+from stegopot.domain.model.information import (
+    ALL_NODES,
+    InformationFlowView,
+    node_principal,
+)
 from stegopot.domain.model.threat import ThreatModelManifest, ThreatModelSpec
 
 
@@ -92,6 +97,7 @@ class ThreatModelCompiler:
             "action_targets",
             "delivered_messages",
             "bounded_detection_signals",
+            "authorized_information_assets",
         ],
         "outcome_reward": [
             "condition_id",
@@ -99,13 +105,23 @@ class ThreatModelCompiler:
             "episode_id",
             "run_result",
             "truth",
+            "authorized_information_assets",
         ],
-        "evaluator": ["central_trial_spec", "run_result", "truth"],
+        "evaluator": [
+            "central_trial_spec",
+            "run_result",
+            "truth",
+            "authorized_information_assets",
+        ],
         "public_audit": ["topology", "delivered_messages", "minimal_status"],
         "research_audit": ["plan", "component_calls", "results", "failures"],
     }
+    information_flows = {
+        trial.trial_id: _compile_information_flow(trial)
+        for trial in plan.trials
+    }
     return ThreatModelManifest(
-        schema_version="stegopot.threat-model/1",
+        schema_version="stegopot.threat-model/2",
         trust_model=spec.trust_model,
         policy_view=spec.policy_view,
         detector_view=spec.detector_view,
@@ -122,6 +138,8 @@ class ThreatModelCompiler:
             "policy_state_persists_only_inside_its_declared_session",
             "episode_substrate_and_message_inboxes_reset_before_each_episode",
             "public_audit_uses_unknown_event_deny_by_default_projection",
+            "typed_information_assets_are_projected_by_principal_deny_by_default",
+            "information_class_limits_cannot_be_widened_by_visible_to",
         ),
         assumptions=(
             "plugins_are_trusted_in_process",
@@ -130,4 +148,33 @@ class ThreatModelCompiler:
         ),
         plan_sha256=_digest(plan_data),
         topology_sha256=_digest(topology),
+        information_flows=information_flows,
     )
+
+
+def _compile_information_flow(trial) -> InformationFlowView:
+  """把 trial 的显式信息声明编译成不含值的逐主体目录。"""
+  principals = {
+      principal
+      for asset in trial.information
+      for principal in asset.visible_to
+      if principal != ALL_NODES
+  }
+  principals.update(node_principal(node.node_id) for node in trial.nodes)
+  views = {principal: [] for principal in sorted(principals)}
+  assets = {}
+  for asset in trial.information:
+    assets[asset.name] = asset.to_dict(include_value=False)
+    for principal in views:
+      if asset.is_visible_to(principal):
+        views[principal].append(asset.name)
+  specification = {
+      asset.name: asset.to_dict(include_value=True)
+      for asset in trial.information
+  }
+  return InformationFlowView(
+      trial_id=trial.trial_id,
+      assets=assets,
+      principal_assets={name: tuple(values) for name, values in views.items()},
+      specification_sha256=_digest(specification),
+  )

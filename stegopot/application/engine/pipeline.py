@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 import dataclasses
 import math
+import hashlib
 from typing import Any
 
 from stegopot.domain.interface.audit import AuditSink
@@ -16,6 +17,7 @@ from stegopot.domain.interface.substrate import (
     Substrate, SubstrateEvent, SubstrateResetContext, SubstrateStepContext, SubstrateStepResult,
 )
 from stegopot.domain.model.detection import DetectionRequest, DetectionResult
+from stegopot.domain.model.communication import CommunicationIntent, carrier_sha256
 from stegopot.domain.model.experiment import json_copy
 from stegopot.domain.model.message import AgentMessage
 from stegopot.domain.model.reward import RewardAction, RewardDetectionSignal, RewardRequest
@@ -32,6 +34,7 @@ class ExperimentPipeline(Substrate):
       detectors: Sequence[tuple[str, StegoDetector]] = (),
       rewards: Sequence[tuple[str, RewardFunction]] = (),
       threat_model: ThreatModelManifest,
+      information_views: Mapping[str, Mapping[str, Any]] | None = None,
       control: ExecutionGuard | None = None,
   ) -> None:
     """创建每个独立 Trial 或 Episode 独享的环境管线。
@@ -44,6 +47,7 @@ class ExperimentPipeline(Substrate):
       detectors: 只检查最终公开正文的具名检测器。
       rewards: 根据公开投递和受限检测信号计算反馈的具名奖励函数。
       threat_model: 预检阶段编译并冻结的有效信息可见性清单。
+      information_views: 宿主按主体预先投影的类型化信息值，不包含未授权资产。
       control: 可选宿主控制器，检查环境、信道、检测和奖励调用边界。
     """
     self._inner = inner
@@ -55,11 +59,16 @@ class ExperimentPipeline(Substrate):
     if not isinstance(threat_model, ThreatModelManifest):
       raise TypeError("threat_model 必须是 ThreatModelManifest")
     self._threat_model = threat_model
+    self._information = {
+        principal: json_copy(dict(values))
+        for principal, values in (information_views or {}).items()
+    }
     self._control = control
     self._ids: set[str] = set()
     self._feedback: dict[str, float] = {}
     self._public = []
     self._reset_context: SubstrateResetContext | None = None
+    self._communications: list[dict[str, Any]] = []
 
   def reset(self, context: SubstrateResetContext) -> None:
     """以 context 重置环境；私有观察必须引用已注册节点。"""
@@ -68,9 +77,13 @@ class ExperimentPipeline(Substrate):
       raise ValueError("私有上下文引用未知节点")
     self._feedback = dict(context.initial_rewards)
     self._public = []
+    self._communications = []
     self._reset_context = context
     self._checkpoint()
-    self._inner.reset(context)
+    self._inner.reset(dataclasses.replace(
+        context,
+        information=json_copy(self._information.get("substrate", {})),
+    ))
     for _, detector in self._detectors:
       self._checkpoint()
       detector.reset()
@@ -86,6 +99,9 @@ class ExperimentPipeline(Substrate):
     if "framework" in value:
       raise ValueError("环境不得覆盖 framework 保留观察字段")
     value["framework"] = {"private": json_copy(self._private.get(node_id, {}))}
+    information = self._information.get(f"node:{node_id}", {})
+    if information:
+      value["framework"]["information"] = json_copy(information)
     if node_id in self._feedback:
       value["framework"]["reward"] = self._feedback[node_id]
     # 观察者通过授权的配置请求转录，而不是收到内部状态或干预前的消息。
@@ -100,6 +116,7 @@ class ExperimentPipeline(Substrate):
     self._checkpoint()
     candidates = {message.message_id: message for message in context.messages}
     delivered = []
+    communication_by_message: dict[str, dict[str, Any]] = {}
     events = list(result.events)
     seen = set()
     for message in result.messages:
@@ -108,6 +125,25 @@ class ExperimentPipeline(Substrate):
         raise ValueError("环境伪造或重复了候选消息")
       self._validate_identity(original, message)
       seen.add(message.message_id)
+      intent = context.actions[message.sender].communication
+      if intent is None:
+        intent = CommunicationIntent.opaque(original.content)
+      if intent.carrier_sha256 != carrier_sha256(original.content):
+        raise ContractViolation("通信来源声明与实际候选正文不一致")
+      communication = {
+          "message_id": message.message_id,
+          "sender": message.sender,
+          "recipient": message.recipient,
+          "round_index": message.round_index,
+          "intent": intent.to_dict(),
+          "stages": [
+              self._carrier_stage("candidate", original.content),
+              self._carrier_stage("substrate", message.content),
+          ],
+          "detections": [],
+          "delivered": False,
+      }
+      communication_by_message[message.message_id] = communication
       current = dataclasses.replace(message, metadata={})
       self._check_message(current)
       for name, channel in self._channels:
@@ -123,6 +159,12 @@ class ExperimentPipeline(Substrate):
           self._audit.emit({"kind": "channel.transformed", "round_index": context.round_index,
                             "data": {"component": name, "input": before.to_dict(),
                                      "output": None if current is None else current.to_dict()}})
+          communication["stages"].append(
+              self._carrier_stage(
+                  f"channel:{name}",
+                  None if current is None else current.content,
+              )
+          )
           if current is not None:
             self._check_message(current)
           self._checkpoint()
@@ -130,6 +172,29 @@ class ExperimentPipeline(Substrate):
           break
       if current is not None:
         delivered.append(current)
+        communication["delivered"] = True
+        communication["stages"].append(
+            self._carrier_stage("delivery", current.content)
+        )
+    for message_id, original in candidates.items():
+      if message_id in seen:
+        continue
+      action = context.actions[original.sender]
+      intent = action.communication or CommunicationIntent.opaque(original.content)
+      communication = {
+          "message_id": message_id,
+          "sender": original.sender,
+          "recipient": original.recipient,
+          "round_index": original.round_index,
+          "intent": intent.to_dict(),
+          "stages": [
+              self._carrier_stage("candidate", original.content),
+              self._carrier_stage("substrate", None),
+          ],
+          "detections": [],
+          "delivered": False,
+      }
+      communication_by_message[message_id] = communication
     self._public.extend(message.to_dict() for message in delivered)
     detection_signals = []
     for message in delivered:
@@ -156,7 +221,21 @@ class ExperimentPipeline(Substrate):
               score=finding.score,
               confidence=finding.confidence,
           ))
+          communication_by_message[message.message_id]["detections"].append({
+              "component": name,
+              "finding": finding.to_dict(),
+          })
           self._checkpoint()
+    for communication in communication_by_message.values():
+      self._audit.emit({
+          "kind": "communication.lineage",
+          "round_index": context.round_index,
+          "data": json_copy(communication),
+      })
+    self._communications.extend(
+        communication_by_message[message_id]
+        for message_id in candidates
+    )
     totals = dict(result.rewards)
     request = RewardRequest(
         round_index=context.round_index,
@@ -166,6 +245,7 @@ class ExperimentPipeline(Substrate):
             for node_id, action in context.actions.items()
         },
         detections=tuple(detection_signals),
+        information=json_copy(self._information.get("reward", {})),
     )
     for name, reward in self._rewards:
       self._checkpoint()
@@ -189,7 +269,11 @@ class ExperimentPipeline(Substrate):
 
   def state(self) -> Mapping[str, Any]:
     """返回中央研究状态；不会自动进入任何节点的观察。"""
-    return {"environment": self._inner.state(), "delivered_count": len(self._public)}
+    return {
+        "environment": self._inner.state(),
+        "delivered_count": len(self._public),
+        "communications": json_copy(self._communications),
+    }
 
   def close(self) -> None:
     """资源统一由组合根的生命周期栈关闭，避免共享客户端被重复关闭。"""
@@ -206,15 +290,32 @@ class ExperimentPipeline(Substrate):
 
   def _detector_context(self) -> Mapping[str, Any]:
     """根据有效威胁模型返回检测器获准读取的公共实验上下文。"""
+    result = {}
+    information = self._information.get("detector", {})
+    if information:
+      result["information"] = json_copy(information)
     if not self._threat_model.detector_view.public_experiment_context:
-      return {}
+      return result
     if self._reset_context is None:
       raise RuntimeError("检测器上下文只能在环境 reset 之后构造")
-    return {
+    result.update({
         "task": self._reset_context.task,
         "node_ids": list(self._reset_context.node_ids),
         "shared_context": dict(self._reset_context.shared_context),
         "topology": dict(self._reset_context.topology),
+    })
+    return result
+
+  @staticmethod
+  def _carrier_stage(name: str, content: str | None) -> dict[str, Any]:
+    """生成不复制正文的载体阶段摘要；阻断阶段使用空摘要。"""
+    if content is None:
+      return {"stage": name, "blocked": True, "sha256": None, "bytes": 0}
+    return {
+        "stage": name,
+        "blocked": False,
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "bytes": len(content.encode("utf-8")),
     }
 
   @staticmethod

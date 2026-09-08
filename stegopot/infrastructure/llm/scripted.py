@@ -12,7 +12,7 @@ class ScriptedPolicy(Policy[int]):
 
   def __init__(self, actions: Sequence[Mapping[str, Any]]) -> None:
     """以 actions 定义每步动作，执行完后保持等待。"""
-    self._actions = tuple(AgentAction(**dict(item)) for item in actions)
+    self._actions = tuple(_action(item) for item in actions)
 
   def initial_state(self) -> int:
     """返回从第一项动作开始的状态。"""
@@ -35,3 +35,8 @@ class EchoPolicy(Policy[None]):
     """读取 observation 的实际 inbox；prev_state 不包含预测答案。"""
     inbox = observation.get("inbox", [])
     return (AgentAction.final_answer(inbox[-1]["content"]) if inbox else AgentAction.wait()), None
+
+
+def _action(value: Mapping[str, Any]) -> AgentAction:
+  """把配置动作转换为领域对象，不允许配置伪造 instrumented 来源。"""
+  return AgentAction.from_dict(value)

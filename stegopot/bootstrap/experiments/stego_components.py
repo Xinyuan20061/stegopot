@@ -16,7 +16,7 @@ def _object(properties, required=()):
 
 def definitions():
   """返回核心隐写组件列表，使用与外部开发者相同的装饰器接口。"""
-  registry = Plugin("core", "0.11.0")
+  registry = Plugin("core", "1.0.0")
   text = {"type": "string", "minLength": 1}
 
   @registry.component("codec", "stegokit", schema=_object({
@@ -44,13 +44,14 @@ def definitions():
   def sender(config, context):
     """将 config 接收者与 context 的已审计 codec 组装成发送策略。"""
     return CodecPolicy(codec=context.resource("codec"), mode="encode", target=config["target"],
-                       active_round=config.get("active_round", 0))
+                       active_round=config.get("active_round", 0), codec_id=config["codec"])
 
   @registry.component("policy", "codec_receiver", references={"codec": "codec"}, preflight=receiver_preflight,
                       schema=_object({"codec": text, "active_round": {"type": "integer", "minimum": 0}}, ["codec"]))
   def receiver(config, context):
     """将 config 轮次与 context 的已审计 codec 组装成接收策略。"""
-    return CodecPolicy(codec=context.resource("codec"), mode="decode", active_round=config.get("active_round", 1))
+    return CodecPolicy(codec=context.resource("codec"), mode="decode",
+                       active_round=config.get("active_round", 1), codec_id=config["codec"])
 
   @registry.component("detector", "keyword", schema=_object({
       "keywords": {"type": "array", "minItems": 1, "items": text},
