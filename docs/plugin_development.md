@@ -16,7 +16,7 @@ StegoPot 核心提供多节点运行、隐写编解码、信息隔离、信道�
 | substrate | reset / observe / step / state / close | 世界状态和局部投影，不应自行发起模型请求 |
 | channel | transform(message) | 只改正文或返回 None 阻断，不改通信身份 |
 | detector | reset / detect / close | 只读取最终公开消息，不获得秘密与真值 |
-| reward | score(transition) | 公开轮次转移到节点奖励；不直接修改策略 |
+| reward | score(request) | 受限公开证据和检测信号到节点奖励；不直接修改策略 |
 | evaluator | evaluate(trial,result) / summarize(records) | 中央真值评分，必须保留失败和跳过样本 |
 | audit | emit(event) | 明确启用的研究审计接收器，不替代宿主强制日志 |
 
@@ -44,7 +44,7 @@ def build_reward(config, context):
   return DeliveryReward(points=config.points)
 ```
 
-其中 `DeliveryReward` 放在扩展的应用服务层，实现 `score(transition)`。
+其中 `DeliveryReward` 放在扩展的应用服务层，实现 `score(request)`。
 不要把业务计算放在注册函数中；注册只做参数接入和对象组装。
 
 例如在独立目录 my-plugin 中创建以下结构：
@@ -63,7 +63,8 @@ my-plugin/
 
 ```python
 from collections.abc import Mapping
-from typing import Any
+
+from stegopot.domain.model import RewardRequest
 
 class DeliveryReward:
   """按实际公开投递计算奖励，不访问中央真值。"""
@@ -72,11 +73,11 @@ class DeliveryReward:
     """points 是每条投递给予发送者的奖励。"""
     self._points = points
 
-  def score(self, transition: Mapping[str, Any]) -> Mapping[str, float]:
-    """transition 为宿主公开轮次转移；返回节点 ID 到本轮奖励的映射。"""
+  def score(self, request: RewardRequest) -> Mapping[str, float]:
+    """request 为不可变公开证据；返回节点 ID 到本轮奖励的映射。"""
     rewards: dict[str, float] = {}
-    for message in transition["messages"]:
-      node = message["sender"]
+    for message in request.messages:
+      node = message.sender
       rewards[node] = rewards.get(node, 0.0) + self._points
     return rewards
 ```
@@ -92,7 +93,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.9,<0.10"]
+dependencies = ["stegopot>=0.10,<0.11"]
 
 [project.entry-points."stegopot.plugins"]
 example = "stegopot_example.bootstrap.plugin:plugin"
@@ -227,7 +228,7 @@ catalog 参数注入；此时调用者负责登记全部依赖，框架仍校验
 
 ## 1.1 预检扩展
 
-Plugin 默认声明 API 1.1；不使用新功能的既有 API 1.0 插件仍可加载。
+API 1.1 引入此能力；当前 API 1.2 宿主仍可加载既有 1.0/1.1 插件。
 组件可在装饰器增加 preflight=校验函数；数据类配置与工厂保持同一类型。
 回调签名为 preflight(config, context) -> Sequence[Diagnostic]。
 
@@ -238,6 +239,22 @@ Plugin 默认声明 API 1.1；不使用新功能的既有 API 1.0 插件仍可�
 - 宿主仅依据组件声明调度预检，不要求修改核心引擎来注册新的校验规则。
 
 完整示例和执行停止约定见 [内核控制与审计](kernel.md)。
+
+## 1.2 奖励证据
+
+当前宿主默认声明插件 API 1.2，并继续接受 1.0/1.1 插件。Reward 的 `score`
+接收 `RewardRequest`，新插件应优先使用以下只读属性：
+
+| 属性 | 内容 | 明确不包含 |
+| --- | --- | --- |
+| `round_index` | 当前同步轮次 | Trial ID 和中央种子 |
+| `actions` | 节点到 kind/target 的只读映射 | 动作正文和 metadata |
+| `messages` | 实际投递的不可变 AgentMessage | 候选、阻断和干预前正文 |
+| `detections` | 组件 ID、消息 ID、判定、分数和置信度 | reason、metadata、context 和 truth |
+
+API 1.1 奖励插件仍可用 `request["messages"]`、`request["actions"]` 等键读取
+JSON 副本。Reward 必须返回现有节点 ID 到有限数值的映射；宿主将多个组件结果
+与 Substrate 奖励相加，并只把每个节点自己的合成标量投影到下一轮观察。
 
 策略 step 的参数名称应为 observation、prev_state，宿主使用关键字调用；
 返回 (AgentAction, next_state)。内部状态仍是不透明对象，不要求 JSON 化。

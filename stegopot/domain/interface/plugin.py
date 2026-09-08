@@ -9,7 +9,7 @@ from stegopot.domain.model.experiment import validate_id
 from stegopot.domain.model.diagnostic import Diagnostic, PreflightContext
 
 
-API_VERSION = "1.1"
+API_VERSION = "1.2"
 COMPONENT_KINDS = frozenset({"scenario", "policy", "llm", "substrate", "channel",
                              "codec", "detector", "reward", "evaluator", "audit"})
 

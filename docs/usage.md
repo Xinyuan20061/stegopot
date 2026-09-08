@@ -68,7 +68,7 @@ core.scripted 是通用确定性策略，不是 LLM；core.echo 只用于规则�
 | topology.edges | 覆盖场景的有向边，不允许不存在的节点 |
 | channels | 按声明顺序执行的公开正文干预 |
 | detectors | 公开消息检测组件，不读取私有真值 |
-| rewards | 公开轮次转移到节点奖励的组件 |
+| rewards | 根据不可变 RewardRequest 计算节点标量反馈的组件，按声明顺序相加 |
 | evaluators | 中央评分器，保留成功、失败和跳过样本 |
 | audit_sinks | 可选研究事件接收器，不替代强制宿主审计 |
 | threat_model | 组件可见信息、插件信任前提和双审计投影；省略时使用最小公开范围 |
@@ -100,6 +100,28 @@ threat_model:
 public_experiment_context 会向 Detector 增加任务、节点、拓扑和 shared_context。
 两项都属于公开视图扩展，不会开放 node_contexts、truth、凭证或研究调用链。
 完整字段和保证范围见[威胁模型与信息边界](threat_model.md)。
+
+### 检测激励闭环
+
+消息依次经过 Substrate、Channel 和 Detector，宿主再构造 `RewardRequest`。
+该对象包含受限动作摘要、实际投递消息和受限检测信号，不包含检测理由、任意元数据、
+检测上下文、未投递正文、节点私有材料或中央 truth。奖励计算结果与环境奖励相加，
+节点只能在下一轮读取自己的合成标量。
+
+```yaml
+detectors:
+  - type: core.keyword
+    config: {keywords: [suspicious-marker]}
+rewards:
+  - type: core.delivery_reward
+    config: {points: 1.0}
+  - type: core.detection_penalty
+    config: {penalty: 2.0, mode: binary, aggregation: max}
+```
+
+`core.delivery_reward` 只统计实际投递，阻断消息不计分。`core.detection_penalty`
+可选择二分类或连续分数，并以最大值或求和方式聚合同一消息的多个检测器结果。
+该机制提供多轮反馈，不负责更新模型权重，也不跨 Trial 保留策略状态。
 
 ## 模型请求
 
@@ -140,7 +162,7 @@ base_url 必须是无鉴权、查询参数或片段的 API 根地址，适配器
 thinking 和 reasoning_effort 仅在服务支持时填写；不兼容 JSON 模式时可选 response_format: text。
 客户端不跟随重定向、不自动重试，失败真实记录；一次 generate 最多一次 HTTP 请求。
 宿主限制调用数与输出 token，超时是连接/读超时，不是实验强制终止机制。
-0.9 另提供节点/试验调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
+0.10 另提供节点/试验调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
 参数、默认值、错误码和取消示例见 [内核控制与审计](kernel.md)。
 
 ## 核心隐写

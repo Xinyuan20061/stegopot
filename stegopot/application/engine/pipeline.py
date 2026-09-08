@@ -18,6 +18,7 @@ from stegopot.domain.interface.substrate import (
 from stegopot.domain.model.detection import DetectionRequest, DetectionResult
 from stegopot.domain.model.experiment import json_copy
 from stegopot.domain.model.message import AgentMessage
+from stegopot.domain.model.reward import RewardAction, RewardDetectionSignal, RewardRequest
 from stegopot.domain.model.threat import ThreatModelManifest
 
 
@@ -41,7 +42,7 @@ class ExperimentPipeline(Substrate):
       node_contexts: 显式按节点授权的私有数据，不给检测器或其他节点。
       channels: 按配置顺序执行的具名公开正文变换器。
       detectors: 只检查最终公开正文的具名检测器。
-      rewards: 根据公开轮次转移计算反馈的具名奖励函数。
+      rewards: 根据公开投递和受限检测信号计算反馈的具名奖励函数。
       threat_model: 预检阶段编译并冻结的有效信息可见性清单。
       control: 可选宿主控制器，检查环境、信道、检测和奖励调用边界。
     """
@@ -130,6 +131,7 @@ class ExperimentPipeline(Substrate):
       if current is not None:
         delivered.append(current)
     self._public.extend(message.to_dict() for message in delivered)
+    detection_signals = []
     for message in delivered:
       for name, detector in self._detectors:
         request = DetectionRequest(
@@ -146,16 +148,32 @@ class ExperimentPipeline(Substrate):
           detail = {"component": name, "finding": finding.to_dict()}
           self._audit.emit({"kind": "detector.result", "data": detail})
           events.append(SubstrateEvent("detector.result", context.round_index, metadata=detail))
+          detection_signals.append(RewardDetectionSignal(
+              component_id=name,
+              message_id=finding.message_id,
+              detector_id=finding.detector_id,
+              is_suspicious=finding.is_suspicious,
+              score=finding.score,
+              confidence=finding.confidence,
+          ))
           self._checkpoint()
     totals = dict(result.rewards)
-    transition = {"round_index": context.round_index,
-                  "messages": [message.to_dict() for message in delivered],
-                  "actions": {key: {"kind": value.kind,
-                                    "target": value.target} for key, value in context.actions.items()}}
+    request = RewardRequest(
+        round_index=context.round_index,
+        messages=tuple(delivered),
+        actions={
+            node_id: RewardAction(kind=action.kind, target=action.target)
+            for node_id, action in context.actions.items()
+        },
+        detections=tuple(detection_signals),
+    )
     for name, reward in self._rewards:
       self._checkpoint()
       with audit_span(self._audit, "reward.score", round_index=context.round_index):
-        values = dict(reward.score(json_copy(transition)))
+        self._audit.emit({"kind": "reward.request", "data": {
+            "component": name, "request": request.to_dict(),
+        }})
+        values = dict(reward.score(request))
         self._validate_rewards(values)
         self._audit.emit({"kind": "reward.computed", "data": {"component": name, "rewards": values}})
         self._checkpoint()

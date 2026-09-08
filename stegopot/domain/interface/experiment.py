@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
 from stegopot.domain.model.experiment import ExperimentPlan, TrialSpec
+from stegopot.domain.model.reward import RewardRequest
 
 
 class ScenarioProvider(Protocol):
@@ -27,8 +28,8 @@ class Evaluator(Protocol):
 
 
 class RewardFunction(Protocol):
-  """根据公开的轮次转移计算节点奖励，不直接修改策略。"""
+  """根据公开投递与受限检测信号计算节点奖励，不直接修改策略。"""
 
-  def score(self, transition: Mapping[str, Any]) -> Mapping[str, float]:
-    """接收动作类型/目标、实际公开投递和轮次的 transition，不含未投递正文或私有最终答案。"""
+  def score(self, request: RewardRequest) -> Mapping[str, float]:
+    """接收不可变 request，不含未投递正文、私有最终答案或检测器诊断详情。"""
     ...

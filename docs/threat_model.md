@@ -1,6 +1,6 @@
 # 威胁模型与信息边界
 
-本页对应 StegoPot 0.9.0 的 `stegopot.threat-model/1` 契约。它把实验中的
+本页对应 StegoPot 0.10.0 的 `stegopot.threat-model/1` 契约。它把实验中的
 组件可见信息、信任前提和审计范围编译成运行前固定的 `ThreatModelManifest`。
 
 ## 保证范围
@@ -53,7 +53,7 @@ threat_model:
 | Substrate | 任务、节点、拓扑、公共上下文、本轮动作和已路由候选消息 | `node_contexts`、`truth` 和基础设施凭证 |
 | Channel | 已移除元数据的候选消息身份与正文 | 动作元数据、私有材料、真值和组件容器 |
 | Detector | 最终投递消息身份与正文；可选公共实验上下文 | 隐写标签、秘密比特、解码材料和中央真值 |
-| Reward | 动作类型/目标与实际投递消息 | 未投递正文、节点私有上下文和最终答案正文 |
+| Reward | 动作类型/目标、实际投递消息与受限检测信号 | 检测理由/元数据/上下文、未投递正文、私有上下文、最终答案正文和 truth |
 | Evaluator | 中央 Trial、真实运行结果和 `truth` | 不进入节点交互；属于受信任中央研究阶段 |
 | Public Audit | 拓扑、实际投递消息和最小运行状态 | 提示、私有观察、调用链、真值和工具私有结果 |
 | Research Audit | 计划、组件调用、实际结果与失败 | API 密钥等基础设施凭证会被脱敏 |
@@ -68,7 +68,7 @@ threat_model:
   -> Scenario 生成 ExperimentPlan
   -> ThreatModelCompiler 编译有效清单
   -> Preflight 固定计划、插件和资源
-  -> ExperimentPipeline 执行消息与检测器视图
+  -> ExperimentPipeline 执行消息、检测器视图与奖励证据投影
   -> AuditJournal 保存双视图证据并封印
 ```
 
@@ -81,9 +81,11 @@ Policy
   -> Candidate Message
   -> Substrate
   -> Channel Transform
+  -> Final Public Message
   -> Detector
-  -> Delivery
-  -> Receiver Observation
+  -> RewardRequest / Reward
+  -> Delivery and Own Scalar Feedback
+  -> Next-round Observation
 ```
 
 直接调用 `MultiAgentBuilder` 属于低层嵌入方式，不经过配置预检和研究工件封印，
@@ -91,6 +93,8 @@ Policy
 
 Channel 之前会清除动作元数据；Channel 只能修改正文或阻断，不能修改消息 ID、
 发送者、接收者和轮次。Detector 只检查经过全部 Channel 后实际允许投递的文本。
+Reward 只接收最终消息和经过字段裁剪的 Detector 信号；Agent 不会得到 Detector
+对象、检测理由或其他节点奖励，只在下一轮得到自己的合成标量。
 
 ## 隐写语义
 

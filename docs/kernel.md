@@ -1,7 +1,18 @@
 # 内核控制与审计
 
-本页对应 StegoPot 0.9.0 / 插件 API 1.1。新增能力遵守四层依赖：
+本页对应 StegoPot 0.10.0 / 插件 API 1.2。新增能力遵守四层依赖：
 领域层声明数据与契约，应用层控制执行，基础设施实现诊断和日志，组装层连接配置与入口。
+
+## 检测与奖励闭环
+
+每轮执行顺序固定为：基础环境处理、公开信道变换、最终文本检测、奖励计算、
+运行器投递。Reward 收到不可变 `RewardRequest`，其中 Detection 只保留组件 ID、
+消息 ID、二分类判定、分数和置信度。检测理由、metadata、请求 context 和中央 truth
+不会进入 Reward；完整检测结果和实际 RewardRequest 仅写入研究审计。
+
+多个 Reward 的返回值与 Substrate 奖励逐节点相加。合成结果记录在轮次结果中，
+并在下一轮通过 `environment.framework.reward` 只提供给对应节点。它是反馈通道，
+不是自动训练循环；当前 Trial 结束后策略状态不会延续到下一 Trial。
 
 ## 执行预算
 

@@ -86,7 +86,12 @@ class ThreatModelCompiler:
         ],
         "channel": ["candidate_message_identity", "candidate_message_content"],
         "detector": detector_fields,
-        "reward": ["action_kinds", "action_targets", "delivered_messages"],
+        "reward": [
+            "action_kinds",
+            "action_targets",
+            "delivered_messages",
+            "bounded_detection_signals",
+        ],
         "evaluator": ["central_trial_spec", "run_result", "truth"],
         "public_audit": ["topology", "delivered_messages", "minimal_status"],
         "research_audit": ["plan", "component_calls", "results", "failures"],
@@ -103,6 +108,7 @@ class ThreatModelCompiler:
             "truth_is_reserved_for_central_evaluation_and_research_audit",
             "channel_receives_metadata_free_message_and_cannot_change_identity",
             "detector_receives_only_final_delivered_message_and_declared_public_context",
+            "reward_receives_no_detector_reason_metadata_context_or_central_truth",
             "public_audit_uses_unknown_event_deny_by_default_projection",
         ),
         assumptions=(

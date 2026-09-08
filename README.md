@@ -11,12 +11,13 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 研究者可以组合内置组件开展实验，也可以通过独立插件实现新的策略、协议、检测方法和评价指标。
 命令行与 Python API 共用同一条执行链路，实验工作区可独立于框架安装目录。
 
-**框架版本：0.9.0 · 插件接口版本：1.1 · Python：3.11+**
+**框架版本：0.10.0 · 插件接口版本：1.2 · Python：3.11+**
 
 ## 目录
 
 - [框架能力](#框架能力)
 - [威胁模型](#威胁模型)
+- [激励闭环](#激励闭环)
 - [项目结构](#项目结构)
 - [安装](#安装)
 - [首次运行](#首次运行)
@@ -43,7 +44,7 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 | 信息隔离 | 分离公开任务、节点私有材料、预共享材料与中央真值 | 可信组件的接口约束，不是恶意代码沙箱 |
 | 威胁模型清单 | 固定组件视图、信任假设、计划摘要和拓扑摘要 | 保证宿主接口一致性，不提供操作系统隔离 |
 | 信道干预 | 阻断或替换正文，扩展新的文本变换 | 不允许修改消息身份或另加传输元数据 |
-| 检测、奖励与评价 | 组合公开消息检测、节点反馈和中央评分 | 奖励计算不自动训练模型；专用算法由插件提供 |
+| 检测、奖励与评价 | 将受限 Detector 信号转换为节点私有标量反馈，并执行中央评分 | 奖励可驱动上下文内适应，但不自动训练或更新模型权重 |
 | 重复与配对运行 | 重复执行显式场景，按计划重放前序实际消息 | 复杂配对设计由场景插件生成，不能凭空补造载体 |
 | 预检与诊断 | 检查节点轮次、发送目标、私有材料及本地隐写资源文件 | 离线检查不代表远程服务或本地推理一定可用 |
 | 执行控制 | 整组、试验和节点调用预算，载荷上限与协作式取消 | 不强制终止已开始的请求，不提供硬费用保证 |
@@ -64,6 +65,7 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 | Trial / Run | Trial 是一次独立试验；Run 执行完整计划，可包含多个 Trial |
 | Resource | 按名称声明的模型或 codec，由框架按作用域构造并注入组件 |
 | Threat Model | 声明组件可见信息和信任前提，运行前编译成可封印清单 |
+| RewardRequest | 固定一轮的公开动作摘要、实际投递消息和受限检测信号 |
 | Audit | 记录执行事实，分别提供研究视图、公开视图及完整性核验 |
 
 ```text
@@ -85,6 +87,8 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 | `core.codec_sender` / `core.codec_receiver` | policy | 在指定轮次调用 codec 发送或恢复比特 |
 | `core.block` / `core.replace` | channel | 阻断消息 / 替换公开正文 |
 | `core.keyword` / `core.llm_detector` | detector | 关键词检测基线 / 模型判别器 |
+| `core.delivery_reward` | reward | 按实际投递消息向发送节点提供固定收益 |
+| `core.detection_penalty` | reward | 按二分类或风险分数惩罚被检测消息的发送节点 |
 | `core.metrics` / `core.stego_metrics` | evaluator | 基础运行统计 / 比特恢复指标 |
 
 检测结果用于研究评价，其有效性需要在目标数据与威胁模型下验证。
@@ -117,6 +121,46 @@ threat_model:
 威胁模型编译、工件和封印属于 `run_file`/CLI 标准实验入口；直接使用
 `MultiAgentBuilder` 只是低层嵌入方式，不会自动生成可核验研究工件。
 
+## 激励闭环
+
+`v0.10.0` 将检测与奖励接入同一条受控执行链：
+
+```text
+候选消息 -> Substrate -> Channel -> 实际公开投递 -> Detector
+                                               -> RewardRequest
+                                               -> Reward
+                                               -> 发送节点下一轮私有标量反馈
+```
+
+Reward 获得的 `RewardRequest` 只包含动作类型/目标、实际投递消息，以及检测器的
+ID、二分类判定、分数和置信度。检测理由、任意元数据、检测上下文、未投递正文、
+其他节点私有材料和中央真值均不会进入 Reward。完整证据与奖励结果只写入研究审计；
+Agent 下一轮只能在自己的 `environment.framework.reward` 中读取合成后的标量。
+
+下面的配置片段把每条成功投递计为 `+1`，再按关键词检测结果施加 `-2` 惩罚：
+
+```yaml
+detectors:
+  - type: core.keyword
+    config:
+      keywords: [suspicious-marker]
+
+rewards:
+  - type: core.delivery_reward
+    config:
+      points: 1.0
+  - type: core.detection_penalty
+    config:
+      penalty: 2.0
+      mode: binary
+      aggregation: max
+```
+
+奖励组件按配置顺序执行，返回值与 Substrate 奖励相加。同一消息由多个检测器检查时，
+`aggregation: max` 采用最大风险，`sum` 累加风险。`mode: score` 使用连续分数，
+`binary` 使用 `is_suspicious` 的 0/1 判定。该闭环可以支持激励驱动的连续多轮观察，
+但不等于强化学习训练，也不能单凭一次输出证明模型自主形成了隐写协议。
+
 ## 项目结构
 
 以下路径以仓库根目录为基准；安装包仅分发 `stegopot/` 中的框架代码和必要的供应商文件。
@@ -125,10 +169,10 @@ threat_model:
 stegopot/                       Python 框架包
   domain/
     interface/                  抽象契约、插件声明、装饰器
-    model/                      消息、动作、拓扑、计划、威胁模型与试验数据
+    model/                      消息、动作、奖励证据、拓扑、计划、威胁模型与试验数据
   application/
     engine/                     节点、轮次、路由、观察与处理管线
-    services/                   试验执行、汇总与威胁模型编译
+    services/                   试验执行、奖励实现、汇总与威胁模型编译
   infrastructure/
     settings/                   配置、工作区、环境快照
     plugins/                    安装发现与组件校验
@@ -508,7 +552,7 @@ config:
 | `topology.edges` | 覆盖场景的有向通信边 |
 | `channels` | 按配置顺序执行的公开正文干预 |
 | `detectors` | 检测最终公开消息的组件，不自动据此阻断消息 |
-| `rewards` | 按公开轮次转移计算节点反馈的组件 |
+| `rewards` | 根据不可变 RewardRequest 计算节点反馈的组件；结果按顺序相加 |
 | `evaluators` | 额外中央评分器，结果使用组件 ID 命名空间 |
 | `audit_sinks` | 附加研究审计接收器，不替代或关闭宿主日志 |
 | `threat_model` | 组件视图、插件信任前提和双审计投影；省略时使用最小公开范围 |
@@ -679,7 +723,7 @@ LLM 通过 JSON 表达相同动作，例如：
 | substrate | `reset(context)`、`observe(node_id)`、`step(context)`、`state()`、`close()` | 管理环境状态，step 返回 SubstrateStepResult |
 | channel | `transform(message)` | 返回同身份 AgentMessage 或 None 阻断；不能改变 ID、主体、轮次或增加元数据 |
 | detector | `reset()`、`detect(request)`、`close()` | 返回与请求 message_id 一致的 DetectionResult |
-| reward | `score(transition)` | 返回现有节点 ID 到有限数值奖励的映射，不直接修改模型权重 |
+| reward | `score(request)` | 读取不可变 RewardRequest，返回现有节点 ID 到有限数值奖励的映射 |
 | evaluator | `evaluate(trial, result)`、`summarize(records)` | 返回可 JSON 序列化的指标；保留全部失败和跳过样本 |
 | audit | `emit(event)` | 持久化研究事件；失败必须向上抛出，不能假装写入成功 |
 
@@ -734,7 +778,8 @@ my-plugin/
 
 ```python
 from collections.abc import Mapping
-from typing import Any
+
+from stegopot.domain.model import RewardRequest
 
 class DeliveryReward:
     """根据实际公开投递计算发送节点的奖励。"""
@@ -743,11 +788,11 @@ class DeliveryReward:
         """points 为每条消息的奖励；本对象不拥有外部资源。"""
         self._points = points
 
-    def score(self, transition: Mapping[str, Any]) -> Mapping[str, float]:
-        """transition 是宿主提供的公开轮次转移；返回节点奖励映射。"""
+    def score(self, request: RewardRequest) -> Mapping[str, float]:
+        """request 是宿主提供的不可变公开证据；返回节点奖励映射。"""
         rewards: dict[str, float] = {}
-        for message in transition["messages"]:
-            sender = message["sender"]
+        for message in request.messages:
+            sender = message.sender
             rewards[sender] = rewards.get(sender, 0.0) + self._points
         return rewards
 ```
@@ -787,7 +832,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.9,<0.10"]
+dependencies = ["stegopot>=0.10,<0.11"]
 
 [project.entry-points."stegopot.plugins"]
 research = "my_stegopot_plugin.bootstrap.plugin:plugin"
@@ -839,7 +884,9 @@ rewards:
 组件不得绕过注入自行读取其他节点数据、重复关闭依赖或修改宿主全局注册表。
 重复 ID、版本不兼容、错误资源类型和未知参数都会被拒绝。
 在进程内注入 PluginCatalog 时由调用方完成注册；CLI 则依据安装元数据与配置允许列表发现插件。
-插件 API 1.1 接受兼容的 1.0 声明，`preflight` 为可选钩子。
+插件 API 1.2 接受兼容的 1.0/1.1 声明，`preflight` 为可选钩子。
+1.1 奖励插件仍可通过 `request["messages"]` 等映射键读取 JSON 数据；新插件应使用
+`RewardRequest` 的类型化属性，并且不能假定自己会收到检测理由、元数据或中央真值。
 预检不得联网、修改全局状态或把节点私有材料写入诊断；示例见 [内核接口说明](docs/kernel.md#扩展预检)。
 
 ## 结果与审计
@@ -909,6 +956,7 @@ Get-FileHash -LiteralPath "outputs/<run-id>/seal.json" -Algorithm SHA256
 
 - 调度采用单进程同步轮次，不提供分布式执行、断点恢复或运行中模块热重载。
 - 奖励接口计算反馈，不包含强化学习训练循环、权重更新或自动协议演化。
+- 当前策略状态只在单个 Trial 内持续；跨 Trial 学习需要由后续会话状态接口或外部训练器实现。
 - 核心提供固定 codec 工具策略，不包含通用 LLM 自主工具规划器；复杂决策可通过 policy 扩展。
 - 插件在宿主进程中执行，应仅安装和启用受信任代码。数据投影和资源注入不等于操作系统安全沙箱。
 - 预检与 doctor 是运行前检查，不保证远程服务可用或本地模型实际兼容；取消与预算也不是硬进程隔离。

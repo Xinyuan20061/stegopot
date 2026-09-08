@@ -6,6 +6,9 @@ from stegopot.domain.model.detection import DetectionMetrics
 from stegopot.domain.model.detection import DetectionRequest
 from stegopot.domain.model.detection import DetectionResult
 from stegopot.domain.model.message import AgentMessage
+from stegopot.domain.model.reward import RewardAction
+from stegopot.domain.model.reward import RewardDetectionSignal
+from stegopot.domain.model.reward import RewardRequest
 from stegopot.domain.model.topology import AgentTopology
 from stegopot.domain.model.topology import TopologyError
 from stegopot.domain.model.threat import AuditViewSpec
@@ -25,6 +28,9 @@ __all__ = [
     "DetectionResult",
     "DetectorViewSpec",
     "PolicyViewSpec",
+    "RewardAction",
+    "RewardDetectionSignal",
+    "RewardRequest",
     "ThreatModelManifest",
     "ThreatModelSpec",
     "TopologyError",

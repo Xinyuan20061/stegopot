@@ -2,6 +2,7 @@
 
 from stegopot.application.services.experiments.explicit import BasicEvaluator, ExplicitScenario
 from stegopot.application.services.experiments.stego import StegoEvaluator
+from stegopot.application.services.rewards import DeliveryReward, DetectionPenaltyReward
 from stegopot.domain.interface.plugin import API_VERSION, ComponentDefinition, PluginDefinition
 from stegopot.infrastructure.llm.policy import LLMPolicy
 from stegopot.infrastructure.llm.prompt import PromptBuilder
@@ -58,7 +59,36 @@ def builtin_plugin() -> PluginDefinition:
                  "active_round": {"type": "integer", "minimum": 0},
                  "action_kind": {"enum": ["message", "final_answer"]},
                  "target": {"type": ["string", "null"]}}, ["client"])
-  return PluginDefinition("core", "0.9.0", API_VERSION, (
+  reward_number = {
+      "type": "number",
+      "description": "奖励组件使用的有限数值；非有限值会在构造时拒绝",
+  }
+  delivery_reward = _object({
+      "points": {
+          **reward_number,
+          "default": 1.0,
+          "description": "每条实际投递消息给予发送节点的分值",
+      },
+  })
+  detection_penalty = _object({
+      "penalty": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1.0,
+          "description": "单位检测风险施加给消息发送节点的惩罚绝对值",
+      },
+      "mode": {
+          "enum": ["binary", "score"],
+          "default": "score",
+          "description": "binary 使用二分类判定，score 使用连续风险分数",
+      },
+      "aggregation": {
+          "enum": ["max", "sum"],
+          "default": "max",
+          "description": "同一消息有多个检测信号时使用最大值或求和",
+      },
+  })
+  return PluginDefinition("core", "0.10.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
       ComponentDefinition("core.metrics", "evaluator", lambda config, ctx: BasicEvaluator(), _object()),
       ComponentDefinition("core.stego_metrics", "evaluator", lambda config, ctx: StegoEvaluator(), _object()),
@@ -73,4 +103,8 @@ def builtin_plugin() -> PluginDefinition:
       ComponentDefinition("core.replace", "channel", lambda config, ctx: ReplaceChannel(**config),
                            _object({"search": {"type": "string", "minLength": 1}, "replacement": text},
                                    ["search", "replacement"])),
+      ComponentDefinition("core.delivery_reward", "reward",
+                           lambda config, ctx: DeliveryReward(**config), delivery_reward),
+      ComponentDefinition("core.detection_penalty", "reward",
+                           lambda config, ctx: DetectionPenaltyReward(**config), detection_penalty),
   ) + definitions() + llm_definitions())
