@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stegopot"
-version = "0.8.0"
-description = "配置驱动、插件可扩展、带信息隔离与审计的隐写实验框架。"
+version = "0.9.0"
+description = "威胁模型感知、配置驱动且可审计的多智能体隐写实验框架。"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

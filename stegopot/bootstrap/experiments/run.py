@@ -77,12 +77,17 @@ def run_experiment(
   root_guard = control.global_scope()
   root_session = session(root_audit, root_guard)
   try:
-    manifest = {"schema_version": "stegopot.manifest/1", "run_id": run_id,
+    threat_model = prepared.threat_model.to_dict()
+    journal.write_artifact("threat-model.json", threat_model)
+    threat_model_path = directory / "threat-model.json"
+    manifest = {"schema_version": "stegopot.manifest/2", "run_id": run_id,
                 "config": config, "plan": prepared.plan.to_dict(),
                 "plugins": prepared.catalog.describe(), "sources": prepared.catalog.source_fingerprints(),
                 "environment": environment_manifest(),
                 "preflight": [item.to_dict() for item in prepared.diagnostics],
-                "audit_profile": "research", "trusted_plugins": True}
+                "audit_profile": "research", "trusted_plugins": True,
+                "threat_model": {"artifact": "threat-model.json",
+                                 "sha256": file_digest(threat_model_path)}}
     journal.write_artifact("manifest.json", manifest)
     evaluators = []
     try:
@@ -118,7 +123,8 @@ def run_experiment(
                 components.adopt(sink_session)
                 fanout.sinks.append(sink_session.create(ComponentSpec.from_dict(value), "audit"))
               runtime = build_runtime(trial, session=components, audit=audit, config=config,
-                                      replay_carrier=carrier, control=guard)
+                                      replay_carrier=carrier,
+                                      threat_model=prepared.threat_model, control=guard)
           except Exception as exc:
             failure = error_details(exc)
             audit.emit({"kind": "component.failed", "data": failure})
@@ -162,7 +168,8 @@ def run_experiment(
     journal.write_artifact("experiment-report.json", report)
     persisted = json.loads((directory / "experiment-report.json").read_text(encoding="utf-8"))
     (directory / "report.md").write_text(render_report(persisted), encoding="utf-8")
-    journal.seal(artifacts=["manifest.json", "experiment-report.json", "report.md"])
+    journal.seal(artifacts=["threat-model.json", "manifest.json",
+                            "experiment-report.json", "report.md"])
     return persisted, directory
   except KeyboardInterrupt:
     root_audit.emit({"kind": "experiment.interrupted", "data": {"reason": "operator_cancelled"}})

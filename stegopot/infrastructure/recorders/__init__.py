@@ -1,5 +1,1 @@
-"""实验报告的持久化实现。"""
-
-from stegopot.infrastructure.recorders.json import JsonExperimentRecorder
-
-__all__ = ["JsonExperimentRecorder"]
+"""宿主管理的实验记录与完整性实现。"""

@@ -8,12 +8,14 @@ from stegopot.domain.interface.audit import AuditSink
 from stegopot.domain.interface.execution import ExecutionGuard
 from stegopot.domain.model.action import AgentAction
 from stegopot.domain.model.experiment import ComponentSpec, TrialSpec
+from stegopot.domain.model.threat import ThreatModelManifest
 from stegopot.infrastructure.llm.scheduling import FixedActionPolicy, RoundPolicy
 
 
 def build_runtime(
     trial: TrialSpec, *, session: ComponentSession, audit: AuditSink,
     config: dict, replay_carrier: str | None = None,
+    threat_model: ThreatModelManifest,
     control: ExecutionGuard | None = None,
 ) -> MultiAgentRuntime:
   """组装独立试验运行器，不实现具体实验算法。
@@ -24,6 +26,7 @@ def build_runtime(
     audit: 宿主审计接口。
     config: 已预检的全局信道、检测与奖励配置。
     replay_carrier: 已完成前序试验的原文，None 表示使用原节点策略。
+    threat_model: 预检编译的有效威胁模型，控制策略历史和检测器上下文。
     control: 本次试验的预算与取消接口，同时注入引擎和公开管线。
   """
   builder = MultiAgentBuilder()
@@ -48,7 +51,8 @@ def build_runtime(
   pipeline = ExperimentPipeline(inner, audit=audit, node_contexts=trial.node_contexts,
                                 channels=components("channels", "channel"),
                                 detectors=components("detectors", "detector"),
-                                rewards=components("rewards", "reward"), control=control)
+                                rewards=components("rewards", "reward"),
+                                threat_model=threat_model, control=control)
   return builder.build(config=RuntimeConfig(max_rounds=trial.max_rounds, termination_mode="max_rounds",
                                             fail_fast=True, strict_routing=True),
                        substrate=pipeline, audit_sink=audit, control=control)

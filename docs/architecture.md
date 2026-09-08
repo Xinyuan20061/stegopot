@@ -17,10 +17,11 @@ StegoPot 是多 Agent 隐写实验框架。核心保留通信隔离、StegoKit�
 stegopot/
   domain/
     interface/                  所有 ABC/Protocol、插件声明、预检、执行控制与调用链契约
-    model/                      消息、动作、拓扑、计划、诊断与取消令牌
+    model/                      消息、动作、拓扑、计划、威胁模型、诊断与取消令牌
   application/
     engine/                     节点状态、轮次调度、路由、信息投影和分层预算
-    services/experiments/       通用场景、试验执行、结果汇总
+    services/                   威胁模型编译
+      experiments/             通用场景、试验执行、结果汇总
   infrastructure/
     settings/                   工作区发现、配置校验、独立环境快照
     plugins/                    已安装 entry point 发现与模式校验
@@ -28,7 +29,7 @@ stegopot/
       clients/                  通用 HTTP 模型适配与模拟客户端
     integrations/stegokit/     核心隐写适配与实际载体编解码
     vendor/stego-kit/           固定版本上游源码
-    substrates/                通信、隐写环境和信道实现
+    substrates/                通信环境和公开信道实现
     detectors/                 基础公开载体检测
     recorders/audit/            双日志、调用关联、只读查询、脱敏、封印和报告
   bootstrap/
@@ -37,6 +38,8 @@ stegopot/
 
 目录体现调用职责，不按每个实验新建一套框架。兼容 Builder 接口仍可用于嵌入调用，
 但标准实验推荐文件级 API/CLI，以得到强制审计、版本清单和统一失败记录。
+0.9 已删除旧 DetectionExperimentBuilder 和装饰器式隐写/检测 Substrate，防止同一实验
+同时存在两套消息处理、检测和真实标签语义。
 
 ## 依赖方向
 
@@ -65,6 +68,7 @@ CLI / prepare_file / run_file
  -> load_config：读取 JSON/YAML 并做严格校验
  -> prepare_experiment：发现允许的组件、执行纯预检、校验凭证与引用、固定计划
  -> ScenarioProvider.plan：只返回 ExperimentPlan / TrialSpec
+ -> ThreatModelCompiler：将配置和固定计划编译为有效组件视图与摘要
  -> ExecutionBudget：创建全局、试验和节点额度，响应取消与截止时间
  -> ComponentSession：构造本次组件，注入已审计、已限额的模型和 codec
  -> MultiAgentRuntime：局部观察 -> Policy.step -> 候选消息
@@ -82,6 +86,7 @@ CLI / prepare_file / run_file
 ## 隔离与生命周期
 
 - shared_context 显式公开；node_contexts[id] 只给对应节点；truth 只给中央评价。
+- 每次标准运行生成 threat-model.json，记录实际组件视图、信任假设和计划/拓扑摘要。
 - 不把中央种子、试验编号和完整计划自动投影给节点。
 - 信道只能改公开正文或阻断，不能改变身份、轮次、目标或增加元数据。
 - 检测器只读最终公开消息，不能通过宿主接口读取私有比特或预共享密钥。
@@ -94,12 +99,13 @@ CLI / prepare_file / run_file
 - 中央评分资源只使用全局额度，不占用实验节点的局部额度。
 - trace/span/call 标识只进入研究视图，不进入公开正文、公开日志或节点观察。
 
-上述约束适用于可信组件，不是 Python 进程安全沙箱。安装的插件仍有宿主进程权限。
+上述约束使用 trusted_in_process 信任模型，适用于可信组件，不是 Python 进程安全沙箱。
 热插拔指两次实验之间启停或更换组件；更换已安装代码后使用新进程。
 
 ## 审计契约
 
-标准输出契约为 stegopot.report/1。完整记录包括配置、计划、组件版本、源码摘要、
+标准输出契约为 stegopot.report/1，根清单为 stegopot.manifest/2，威胁模型为
+stegopot.threat-model/1。完整记录包括配置、计划、有效信息边界、组件版本、源码摘要、
 成功/失败/跳过状态、模型请求和实际回复、工具结果与消息干预。
 CLI 和文件级 API 不能关闭宿主日志；写入失败中止，不生成虚假完整封印。
 公开日志只是白名单投影，不能保证模型主动输出的正文不泄密。
@@ -112,4 +118,5 @@ CLI 和文件级 API 不能关闭宿主日志；写入失败中止，不生成�
 本地具备测试集时，通过 python -m unittest discover -s tests/contracts -v 运行，并额外检查安装包脱离源码目录后能否工作。
 测试结果和临时配置不得回填 configs 或作为框架预置实验发布。
 
-0.8 的参数、状态和调用约定见 [内核控制与审计](kernel.md)。
+0.9 的参数、状态和调用约定见 [内核控制与审计](kernel.md)，威胁模型见
+[威胁模型与信息边界](threat_model.md)。

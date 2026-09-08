@@ -15,6 +15,54 @@ COMPONENT_SCHEMA = {
     "type": "object", "required": ["type"], "additionalProperties": False,
     "properties": {"type": {"type": "string", "minLength": 1}, "config": {"type": "object"}},
 }
+THREAT_MODEL_SCHEMA = {
+    "type": "object",
+    "description": "组件信息视图、插件信任前提和双审计投影",
+    "additionalProperties": False,
+    "properties": {
+        "trust_model": {
+            "const": "trusted_in_process",
+            "description": "插件在宿主 Python 进程内受信任执行；这不是操作系统安全沙箱",
+        },
+        "policy_view": {
+            "type": "object",
+            "description": "所有策略通过宿主观察接口获得的可选公开信息",
+            "additionalProperties": False,
+            "properties": {
+                "public_channel_history": {
+                    "type": "boolean",
+                    "description": "是否向所有策略公开此前已实际投递的消息历史",
+                },
+            },
+        },
+        "detector_view": {
+            "type": "object",
+            "description": "检测器除最终投递消息外可获得的公共实验信息",
+            "additionalProperties": False,
+            "properties": {
+                "public_experiment_context": {
+                    "type": "boolean",
+                    "description": "是否向检测器提供任务、节点、拓扑和公共上下文",
+                },
+            },
+        },
+        "audit": {
+            "type": "object",
+            "description": "宿主公开日志与研究日志采用的固定投影范围",
+            "additionalProperties": False,
+            "properties": {
+                "public_profile": {
+                    "const": "minimal",
+                    "description": "公开日志使用未知事件默认拒绝的最小白名单投影",
+                },
+                "research_profile": {
+                    "const": "complete",
+                    "description": "研究日志保留计划、调用、失败和结果等完整证据",
+                },
+            },
+        },
+    },
+}
 CONFIG_SCHEMA = {
     "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
     "required": ["schema_version", "scenario"], "additionalProperties": False,
@@ -37,6 +85,7 @@ CONFIG_SCHEMA = {
         "rewards": {"type": "array", "items": COMPONENT_SCHEMA},
         "evaluators": {"type": "array", "items": COMPONENT_SCHEMA},
         "audit_sinks": {"type": "array", "items": COMPONENT_SCHEMA},
+        "threat_model": THREAT_MODEL_SCHEMA,
         "runtime": {"type": "object", "additionalProperties": False, "properties": {
             "max_model_calls": {"type": "integer", "minimum": 1, "maximum": 100000, "description": "整组实验模型调用次数上限"},
             "max_output_tokens": {"type": "integer", "minimum": 1, "maximum": 65536, "description": "每次宿主模型请求的最大输出 token 数"},
@@ -106,6 +155,23 @@ def validate_config(value: Any) -> dict[str, Any]:
                      "max_context_bytes": 1000000, "max_total_tokens": 1000000,
                      **data.get("runtime", {})}
   data["audit"] = {"required": True, "profile": "research", **data.get("audit", {})}
+  threat_model = data.get("threat_model", {})
+  data["threat_model"] = {
+      "trust_model": threat_model.get("trust_model", "trusted_in_process"),
+      "policy_view": {
+          "public_channel_history": False,
+          **threat_model.get("policy_view", {}),
+      },
+      "detector_view": {
+          "public_experiment_context": False,
+          **threat_model.get("detector_view", {}),
+      },
+      "audit": {
+          "public_profile": "minimal",
+          "research_profile": "complete",
+          **threat_model.get("audit", {}),
+      },
+  }
   return data
 
 

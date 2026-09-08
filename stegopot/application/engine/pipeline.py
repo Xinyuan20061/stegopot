@@ -18,6 +18,7 @@ from stegopot.domain.interface.substrate import (
 from stegopot.domain.model.detection import DetectionRequest, DetectionResult
 from stegopot.domain.model.experiment import json_copy
 from stegopot.domain.model.message import AgentMessage
+from stegopot.domain.model.threat import ThreatModelManifest
 
 
 class ExperimentPipeline(Substrate):
@@ -29,6 +30,7 @@ class ExperimentPipeline(Substrate):
       channels: Sequence[tuple[str, ChannelTransform]] = (),
       detectors: Sequence[tuple[str, StegoDetector]] = (),
       rewards: Sequence[tuple[str, RewardFunction]] = (),
+      threat_model: ThreatModelManifest,
       control: ExecutionGuard | None = None,
   ) -> None:
     """创建每次试验独享的环境管线。
@@ -40,6 +42,7 @@ class ExperimentPipeline(Substrate):
       channels: 按配置顺序执行的具名公开正文变换器。
       detectors: 只检查最终公开正文的具名检测器。
       rewards: 根据公开轮次转移计算反馈的具名奖励函数。
+      threat_model: 预检阶段编译并冻结的有效信息可见性清单。
       control: 可选宿主控制器，检查环境、信道、检测和奖励调用边界。
     """
     self._inner = inner
@@ -48,10 +51,14 @@ class ExperimentPipeline(Substrate):
     self._channels = tuple(channels)
     self._detectors = tuple(detectors)
     self._rewards = tuple(rewards)
+    if not isinstance(threat_model, ThreatModelManifest):
+      raise TypeError("threat_model 必须是 ThreatModelManifest")
+    self._threat_model = threat_model
     self._control = control
     self._ids: set[str] = set()
     self._feedback: dict[str, float] = {}
     self._public = []
+    self._reset_context: SubstrateResetContext | None = None
 
   def reset(self, context: SubstrateResetContext) -> None:
     """以 context 重置环境；私有观察必须引用已注册节点。"""
@@ -60,6 +67,7 @@ class ExperimentPipeline(Substrate):
       raise ValueError("私有上下文引用未知节点")
     self._feedback = {}
     self._public = []
+    self._reset_context = context
     self._checkpoint()
     self._inner.reset(context)
     for _, detector in self._detectors:
@@ -80,7 +88,7 @@ class ExperimentPipeline(Substrate):
     if node_id in self._feedback:
       value["framework"]["reward"] = self._feedback[node_id]
     # 观察者通过授权的配置请求转录，而不是收到内部状态或干预前的消息。
-    if self._private.get(node_id, {}).get("observe_public_channel") is True:
+    if self._threat_model.policy_view.public_channel_history:
       value["framework"]["public_channel"] = json_copy(self._public)
     return value
 
@@ -126,7 +134,8 @@ class ExperimentPipeline(Substrate):
       for name, detector in self._detectors:
         request = DetectionRequest(
             message_id=message.message_id, sender=message.sender, recipient=message.recipient,
-            content=message.content, round_index=message.round_index, metadata={}, context={},
+            content=message.content, round_index=message.round_index,
+            metadata={}, context=self._detector_context(),
         )
         self._checkpoint()
         with audit_span(self._audit, "detector.detect", round_index=context.round_index,
@@ -176,6 +185,19 @@ class ExperimentPipeline(Substrate):
     """检查实际 message 正文大小，不截断或改写载体。"""
     if self._control is not None:
       self._control.check_size(message.content, kind="message")
+
+  def _detector_context(self) -> Mapping[str, Any]:
+    """根据有效威胁模型返回检测器获准读取的公共实验上下文。"""
+    if not self._threat_model.detector_view.public_experiment_context:
+      return {}
+    if self._reset_context is None:
+      raise RuntimeError("检测器上下文只能在环境 reset 之后构造")
+    return {
+        "task": self._reset_context.task,
+        "node_ids": list(self._reset_context.node_ids),
+        "shared_context": dict(self._reset_context.shared_context),
+        "topology": dict(self._reset_context.topology),
+    }
 
   @staticmethod
   def _validate_identity(before: AgentMessage, after: AgentMessage) -> None:

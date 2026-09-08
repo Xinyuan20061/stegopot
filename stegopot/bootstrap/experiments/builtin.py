@@ -58,7 +58,7 @@ def builtin_plugin() -> PluginDefinition:
                  "active_round": {"type": "integer", "minimum": 0},
                  "action_kind": {"enum": ["message", "final_answer"]},
                  "target": {"type": ["string", "null"]}}, ["client"])
-  return PluginDefinition("core", "0.8.0", API_VERSION, (
+  return PluginDefinition("core", "0.9.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
       ComponentDefinition("core.metrics", "evaluator", lambda config, ctx: BasicEvaluator(), _object()),
       ComponentDefinition("core.stego_metrics", "evaluator", lambda config, ctx: StegoEvaluator(), _object()),

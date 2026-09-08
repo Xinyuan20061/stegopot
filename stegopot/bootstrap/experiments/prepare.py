@@ -7,18 +7,31 @@ from typing import Any
 
 from stegopot.bootstrap.experiments.builtin import builtin_plugin
 from stegopot.bootstrap.experiments.components import PlanningContext
+from stegopot.application.services.threat_model import ThreatModelCompiler
 from stegopot.domain.model.experiment import ComponentSpec, ExperimentPlan, json_copy
 from stegopot.domain.model.diagnostic import Diagnostic, PreflightContext, PreflightError
+from stegopot.domain.model.threat import ThreatModelManifest, ThreatModelSpec
 from stegopot.infrastructure.plugins.catalog import PluginCatalog
 from stegopot.infrastructure.settings.experiment import validate_config
 
 
 @dataclass(frozen=True)
 class PreparedExperiment:
-  """已校验配置。config/plan 为研究数据，catalog 为固定注册表，resources 为资源引用，credentials 不参与 repr。"""
+  """已校验配置、计划和威胁模型。
+
+  属性：
+    config: 已填入宿主默认值的标准配置副本。
+    plan: 场景展开并应用拓扑、策略和评价器覆盖后的固定计划。
+    threat_model: 根据最终计划编译的有效信息可见性清单。
+    catalog: 已完成组件校验并冻结的插件注册表。
+    resources: 配置声明的模型与 codec 资源引用。
+    credentials: 仅供组合根注入的授权凭证，不参与 repr。
+    diagnostics: 不阻止运行的 warning 和 info 级预检结果。
+  """
 
   config: Mapping[str, Any]
   plan: ExperimentPlan
+  threat_model: ThreatModelManifest
   catalog: PluginCatalog
   resources: Mapping[str, ComponentSpec]
   credentials: Mapping[str, str] = field(repr=False)
@@ -145,6 +158,18 @@ def prepare_experiment(
     raise ValueError(f"已知 LLM 策略最多需要 {known_policy_calls} 次调用，超过 max_model_calls")
   if any(item.severity == "error" for item in diagnostics):
     raise PreflightError(diagnostics)
+  final_plan = ExperimentPlan(trials, evaluators)
+  threat_model = ThreatModelCompiler().compile(
+      final_plan,
+      ThreatModelSpec.from_dict(config["threat_model"]),
+  )
   catalog.freeze()
-  return PreparedExperiment(config, ExperimentPlan(trials, evaluators), catalog, resources,
-                            credentials, tuple(diagnostics))
+  return PreparedExperiment(
+      config=config,
+      plan=final_plan,
+      threat_model=threat_model,
+      catalog=catalog,
+      resources=resources,
+      credentials=credentials,
+      diagnostics=tuple(diagnostics),
+  )

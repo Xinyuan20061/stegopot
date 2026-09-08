@@ -70,30 +70,6 @@ def verify_audit(
   return seal
 
 
-def verify_study(
-    directory: str | Path, *, expected_seal_sha256: str | None = None,
-) -> dict[str, Any]:
-  """验证整组实验及所有已封印子试验。
-
-  参数：
-    directory: 含 research-report.json 的实验根目录。
-    expected_seal_sha256: 独立保存的根封印锚点，没有时只检查内部一致性。
-
-  返回：
-    校验通过的根封印内容；目录穿越、删改或截断都会导致失败。
-  """
-  root = Path(directory).resolve()
-  seal = verify_audit(root, expected_seal_sha256=expected_seal_sha256)
-  report = json.loads((root / "research-report.json").read_text(encoding="utf-8"))
-  for record in report["trials"]:
-    name = record["artifact_dir"]
-    path = root / name
-    if Path(name).name != name or path.resolve().parent != root:
-      raise ValueError("试验目录越界")
-    verify_audit(path, expected_seal_sha256=record["seal_sha256"])
-  return seal
-
-
 def verify_experiment(directory: str | Path, *, expected_seal_sha256: str | None = None) -> dict[str, Any]:
   """校验 directory 标准报告与全部子试验；expected_seal_sha256 是可选外部锚点。"""
   root = Path(directory).resolve()
@@ -103,6 +79,29 @@ def verify_experiment(directory: str | Path, *, expected_seal_sha256: str | None
     raise ValueError('根封印缺少标准实验工件')
   report = json.loads((root / 'experiment-report.json').read_text(encoding='utf-8'))
   manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
+  manifest_version = manifest.get('schema_version')
+  if manifest_version not in {'stegopot.manifest/1', 'stegopot.manifest/2'}:
+    raise ValueError('未知实验清单版本')
+  if manifest_version == 'stegopot.manifest/2':
+    if 'threat-model.json' not in seal.get('artifacts', {}):
+      raise ValueError('根封印缺少威胁模型工件')
+    threat_ref = manifest.get('threat_model', {})
+    threat_path = root / 'threat-model.json'
+    if (threat_ref.get('artifact') != 'threat-model.json'
+        or threat_ref.get('sha256') != file_digest(threat_path)):
+      raise ValueError('实验清单与威胁模型工件不一致')
+    threat_model = json.loads(threat_path.read_text(encoding='utf-8'))
+    if threat_model.get('schema_version') != 'stegopot.threat-model/1':
+      raise ValueError('未知威胁模型工件版本')
+    if threat_model.get('plan_sha256') != digest(manifest.get('plan')):
+      raise ValueError('威胁模型与预注册计划不一致')
+    topology = [{
+        'trial_id': trial['trial_id'],
+        'nodes': [node['node_id'] for node in trial['nodes']],
+        'edges': trial['edges'],
+    } for trial in manifest['plan']['trials']]
+    if threat_model.get('topology_sha256') != digest(topology):
+      raise ValueError('威胁模型与预注册拓扑不一致')
   if report.get('schema_version') != 'stegopot.report/1':
     raise ValueError('未知实验报告版本')
   if [item['trial']['trial_id'] for item in report['trials']] != [item['trial_id'] for item in manifest['plan']['trials']]:

@@ -71,6 +71,7 @@ core.scripted 是通用确定性策略，不是 LLM；core.echo 只用于规则�
 | rewards | 公开轮次转移到节点奖励的组件 |
 | evaluators | 中央评分器，保留成功、失败和跳过样本 |
 | audit_sinks | 可选研究事件接收器，不替代强制宿主审计 |
+| threat_model | 组件可见信息、插件信任前提和双审计投影；省略时使用最小公开范围 |
 | runtime | max_model_calls=64、max_output_tokens=1024、max_rounds=100、max_trials=1000、max_seconds=3600 |
 | audit | 只允许 required=true、profile=research，不可关闭审计 |
 
@@ -79,6 +80,26 @@ shared_context（公开材料）、node_contexts（按节点隔离的私有材�
 max_rounds 属于场景轮数，runtime.max_rounds 是宿主上限；后者不会自动延长实验。
 参数必须符合 schema，拒绝未知字段、重复键、YAML 别名和超过 2 MB 的配置文件。
 不执行配置中的 Python 表达式，不插值任意环境变量，更不会把全部 .env 写入配置清单。
+
+### 威胁模型
+
+```yaml
+threat_model:
+  trust_model: trusted_in_process
+  policy_view:
+    public_channel_history: false
+  detector_view:
+    public_experiment_context: false
+  audit:
+    public_profile: minimal
+    research_profile: complete
+```
+
+默认情况下，Policy 只通过 inbox 读取发给自己的消息，Detector 只读取最终投递正文。
+打开 public_channel_history 会把此前全部实际投递消息交给所有策略；打开
+public_experiment_context 会向 Detector 增加任务、节点、拓扑和 shared_context。
+两项都属于公开视图扩展，不会开放 node_contexts、truth、凭证或研究调用链。
+完整字段和保证范围见[威胁模型与信息边界](threat_model.md)。
 
 ## 模型请求
 
@@ -119,7 +140,7 @@ base_url 必须是无鉴权、查询参数或片段的 API 根地址，适配器
 thinking 和 reasoning_effort 仅在服务支持时填写；不兼容 JSON 模式时可选 response_format: text。
 客户端不跟随重定向、不自动重试，失败真实记录；一次 generate 最多一次 HTTP 请求。
 宿主限制调用数与输出 token，超时是连接/读超时，不是实验强制终止机制。
-0.8 另提供节点/试验调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
+0.9 另提供节点/试验调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
 参数、默认值、错误码和取消示例见 [内核控制与审计](kernel.md)。
 
 ## 核心隐写
@@ -141,7 +162,8 @@ core.codec_sender/receiver 是工具策略，不代表 LLM 自主隐写；需要
 
 ## 结果与审计
 
-outputs/<run-id>/ 中的 manifest.json 固定配置、展开计划、插件版本和源码摘要；
+outputs/<run-id>/ 中的 threat-model.json 固定有效信息边界、信任假设和计划/拓扑摘要；
+manifest.json 固定配置、展开计划、插件版本、源码摘要并引用威胁模型文件；
 experiment-report.json/report.md 保存整组结果。每个试验子目录有 result.json、
 research.jsonl、public.jsonl 和 seal.json，根封印关联全部子结果。
 research 为私有研究数据，公开日志也应检查模型正文是否主动泄露秘密。

@@ -2,20 +2,21 @@
   <img src="docs/assets/stegopot-icon.png" alt="StegoPot" width="144">
 </p>
 <h1 align="center">StegoPot</h1>
-<p align="center">可配置拓扑、内置隐写能力、开放组件接口与全过程审计的多智能体实验框架</p>
+<p align="center">威胁模型感知、可配置拓扑、内置隐写能力与全过程审计的多智能体实验框架</p>
 
 StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 或 JSON 定义任务、
 节点、通信拓扑与评价方式，统一执行智能体交互、隐写编解码、信道干预和审计记录。
 
-框架以**配置驱动、信息隔离、可扩展接口和可核验记录**为核心：研究者可以组合内置组件
-开展实验，也可以通过独立插件实现新的策略、协议、检测方法和评价指标。
+框架以**显式威胁模型、配置驱动、信息隔离、可扩展接口和可核验记录**为核心：
+研究者可以组合内置组件开展实验，也可以通过独立插件实现新的策略、协议、检测方法和评价指标。
 命令行与 Python API 共用同一条执行链路，实验工作区可独立于框架安装目录。
 
-**框架版本：0.8.0 · 插件接口版本：1.1 · Python：3.11+**
+**框架版本：0.9.0 · 插件接口版本：1.1 · Python：3.11+**
 
 ## 目录
 
 - [框架能力](#框架能力)
+- [威胁模型](#威胁模型)
 - [项目结构](#项目结构)
 - [安装](#安装)
 - [首次运行](#首次运行)
@@ -40,6 +41,7 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 | 模型驱动决策 | 为不同节点设置模型、提示、采样参数和历史保留 | 使用兼容 Chat Completions 的服务，或实现 LLMClient |
 | 隐写通信 | 编码私有比特、传递公开文本、从实际接收载体恢复比特 | 内置 StegoKit；通常需要本地语言模型及隐写依赖 |
 | 信息隔离 | 分离公开任务、节点私有材料、预共享材料与中央真值 | 可信组件的接口约束，不是恶意代码沙箱 |
+| 威胁模型清单 | 固定组件视图、信任假设、计划摘要和拓扑摘要 | 保证宿主接口一致性，不提供操作系统隔离 |
 | 信道干预 | 阻断或替换正文，扩展新的文本变换 | 不允许修改消息身份或另加传输元数据 |
 | 检测、奖励与评价 | 组合公开消息检测、节点反馈和中央评分 | 奖励计算不自动训练模型；专用算法由插件提供 |
 | 重复与配对运行 | 重复执行显式场景，按计划重放前序实际消息 | 复杂配对设计由场景插件生成，不能凭空补造载体 |
@@ -61,6 +63,7 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 | Scenario / Plan | 根据配置生成试验计划，描述节点、拓扑、环境和评价安排 |
 | Trial / Run | Trial 是一次独立试验；Run 执行完整计划，可包含多个 Trial |
 | Resource | 按名称声明的模型或 codec，由框架按作用域构造并注入组件 |
+| Threat Model | 声明组件可见信息和信任前提，运行前编译成可封印清单 |
 | Audit | 记录执行事实，分别提供研究视图、公开视图及完整性核验 |
 
 ```text
@@ -88,6 +91,32 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 参数模式可通过 `python -m stegopot plugins inspect core` 查询，
 单个内置组件可使用 `python -m stegopot schema --component core.llm` 查看。
 
+## 威胁模型
+
+每份配置都具有有效威胁模型。未填写时使用最小公开范围：策略只看到自身收件箱和
+私有上下文，Detector 只看到最终投递消息。需要扩大视图时必须显式声明：
+
+```yaml
+threat_model:
+  trust_model: trusted_in_process
+  policy_view:
+    public_channel_history: false
+  detector_view:
+    public_experiment_context: false
+  audit:
+    public_profile: minimal
+    research_profile: complete
+```
+
+预检会把配置和展开后的计划编译为 `ThreatModelManifest`。运行结果中的
+`threat-model.json` 保存实际组件视图、强制边界、信任假设、计划摘要和拓扑摘要，
+并与 `manifest.json` 一同进入根封印。完整约定见[威胁模型与信息边界](docs/threat_model.md)。
+
+`trusted_in_process` 表示插件是受信任的同进程代码。框架控制通过接口交付的信息，
+但不会阻止恶意插件直接访问文件、网络或进程对象，因此不能宣传为安全沙箱。
+威胁模型编译、工件和封印属于 `run_file`/CLI 标准实验入口；直接使用
+`MultiAgentBuilder` 只是低层嵌入方式，不会自动生成可核验研究工件。
+
 ## 项目结构
 
 以下路径以仓库根目录为基准；安装包仅分发 `stegopot/` 中的框架代码和必要的供应商文件。
@@ -96,10 +125,10 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 stegopot/                       Python 框架包
   domain/
     interface/                  抽象契约、插件声明、装饰器
-    model/                      消息、动作、拓扑、计划与试验数据
+    model/                      消息、动作、拓扑、计划、威胁模型与试验数据
   application/
     engine/                     节点、轮次、路由、观察与处理管线
-    services/                   通用实验用例与汇总
+    services/                   试验执行、汇总与威胁模型编译
   infrastructure/
     settings/                   配置、工作区、环境快照
     plugins/                    安装发现与组件校验
@@ -482,6 +511,7 @@ config:
 | `rewards` | 按公开轮次转移计算节点反馈的组件 |
 | `evaluators` | 额外中央评分器，结果使用组件 ID 命名空间 |
 | `audit_sinks` | 附加研究审计接收器，不替代或关闭宿主日志 |
+| `threat_model` | 组件视图、插件信任前提和双审计投影；省略时使用最小公开范围 |
 | `runtime` | 分层模型/工具调用预算、输出与累计 token、载荷大小、轮数、试验数和软时间上限 |
 | `audit` | 仅允许 `required: true`、`profile: research` |
 
@@ -660,8 +690,10 @@ LLM 通过 JSON 表达相同动作，例如：
 - `truth` 只用于中央评价，不自动加入节点观察；中央种子和完整计划也不自动公开。
 - 奖励输入包含轮次、实际公开消息和动作类型/目标，不包含未投递正文或私有最终答案。
 - 检测器只获得最终公开正文及身份，不能从宿主取得秘密比特和预共享材料。
-- 节点可通过自己的私有配置 `observe_public_channel: true` 获得最终公开转录，
-  但不会获得干预前状态或其他节点的私有上下文。
+- 只有 `threat_model.policy_view.public_channel_history: true` 时，所有策略才会获得
+  此前最终投递的公开转录；不会获得干预前状态或其他节点私有上下文。
+- Detector 默认只读取最终投递消息；只有显式打开
+  `detector_view.public_experiment_context` 才获得任务、节点、拓扑和公共上下文。
 - codec 的 research 字段是研究材料，不得附加到公开消息中。
 
 场景可通过 `ReplaySpec` 引用前序试验的唯一实际投递正文。
@@ -755,7 +787,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.8,<0.9"]
+dependencies = ["stegopot>=0.9,<0.10"]
 
 [project.entry-points."stegopot.plugins"]
 research = "my_stegopot_plugin.bootstrap.plugin:plugin"
@@ -816,6 +848,7 @@ rewards:
 
 ```text
 outputs/<run-id>/
+  threat-model.json             有效组件视图、信任假设、计划与拓扑摘要
   manifest.json                 配置、计划、插件摘要、环境版本与预检提示
   experiment-report.json        整组研究报告
   report.md                     人类可读汇总
@@ -880,6 +913,8 @@ Get-FileHash -LiteralPath "outputs/<run-id>/seal.json" -Algorithm SHA256
 - 插件在宿主进程中执行，应仅安装和启用受信任代码。数据投影和资源注入不等于操作系统安全沙箱。
 - 预检与 doctor 是运行前检查，不保证远程服务可用或本地模型实际兼容；取消与预算也不是硬进程隔离。
 - 框架记录实验过程，不预设研究结论。显式共享协议、工具辅助传输和模型自主形成协议应分别定义和评价。
+- 0.9 删除旧 `DetectionExperimentBuilder` 及装饰器式隐写/检测 Substrate；标准实验统一使用
+  `run_file`/CLI、`ExperimentPipeline`、Codec Policy 和 Detector 组件。
 
 ### 常见问题处理
 

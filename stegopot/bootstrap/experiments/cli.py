@@ -16,7 +16,7 @@ from stegopot.bootstrap.experiments.signals import cancellation_signals
 from stegopot.domain.model.diagnostic import PreflightError
 from stegopot.domain.model.execution import CancellationToken
 from stegopot.infrastructure.plugins.catalog import PluginCatalog, installed_plugins
-from stegopot.infrastructure.recorders.audit.integrity import verify_experiment, verify_study
+from stegopot.infrastructure.recorders.audit.integrity import verify_experiment
 from stegopot.infrastructure.recorders.audit.reader import AuditReader
 from stegopot.infrastructure.settings.diagnostics import diagnose_resources
 from stegopot.infrastructure.settings.experiment import CONFIG_SCHEMA
@@ -105,8 +105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload = components[args.component].config_schema
     elif args.command == "verify":
       directory = Path(args.directory).expanduser().resolve()
-      verifier = verify_experiment if (directory / "experiment-report.json").exists() else verify_study
-      verifier(directory, expected_seal_sha256=args.expected_seal_sha256)
+      verify_experiment(directory, expected_seal_sha256=args.expected_seal_sha256)
       payload = {"verified": True, "directory": str(directory)}
     elif args.command == "events":
       if not 1 <= args.limit <= 10000:

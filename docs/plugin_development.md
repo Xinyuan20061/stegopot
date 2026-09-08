@@ -92,7 +92,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.8,<0.9"]
+dependencies = ["stegopot>=0.9,<0.10"]
 
 [project.entry-points."stegopot.plugins"]
 example = "stegopot_example.bootstrap.plugin:plugin"
@@ -161,6 +161,7 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 | channels / detectors / rewards | 按配置顺序执行的组件列表 |
 | evaluators | 添加中央评分器，结果按组件 ID 命名空间保存 |
 | audit_sinks | 添加研究事件接收器，不能移除宿主日志 |
+| threat_model | 声明策略/检测器公开视图、同进程信任前提和审计投影 |
 | runtime | 调用、输出 token、轮次、试验数和软时间上限 |
 | audit | 当前只支持 required=true、profile=research |
 
@@ -169,6 +170,8 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 基础隐写策略使用节点私有字段 `secret_bits`、`cover`、`shared_material`；
 后者包括双方预先共享的 `messages`、可选 `material/max_bits`。
 不要通过共享上下文、节点 ID、拓扑选择或评分反馈意外泄露实验秘密。
+插件不读取完整 ThreatModelManifest；宿主应在调用组件前完成投影。
+Detector 是否读取公共实验上下文由 threat_model 显式控制，永远不通过宿主获得真值。
 
 默认上限：64 次模型调用、每次 1024 输出 token、100 轮、1000 次试验、3600 秒。
 场景轮数仍由 TrialSpec 指定，宿主上限不是自动增加轮次。
@@ -188,7 +191,8 @@ decode 只接收实际载体和预共享材料。真实 token ID 不作为隐含
 
 ## 审计与失败
 
-- manifest.json：固定配置、展开计划、插件版本、Python 源码摘要。
+- threat-model.json：固定有效组件视图、信任假设、计划摘要和拓扑摘要。
+- manifest.json：固定配置、展开计划、插件版本、Python 源码摘要并引用威胁模型。
 - research.jsonl：完整研究事件；可含合成秘密和模型提示，不能公开。
 - public.jsonl：白名单公开投影；不保证模型正文没有主动泄露信息。
 - 子试验 result.json：真实结果、状态、插件评分与调用计数。
