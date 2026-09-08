@@ -2,5 +2,6 @@
 
 from stegopot.application.services.rewards.public import DeliveryReward
 from stegopot.application.services.rewards.public import DetectionPenaltyReward
+from stegopot.application.services.rewards.outcome import ExactMatchOutcomeReward
 
-__all__ = ["DeliveryReward", "DetectionPenaltyReward"]
+__all__ = ["DeliveryReward", "DetectionPenaltyReward", "ExactMatchOutcomeReward"]

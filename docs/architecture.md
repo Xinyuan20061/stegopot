@@ -17,12 +17,12 @@ StegoPot 是多 Agent 隐写实验框架。核心保留通信隔离、StegoKit�
 stegopot/
   domain/
     interface/                  所有 ABC/Protocol、插件声明、预检、执行控制与调用链契约
-    model/                      消息、动作、奖励证据、拓扑、计划、威胁模型、诊断与取消令牌
+    model/                      消息、动作、奖励证据、会话计划、威胁模型、诊断与取消令牌
   application/
     engine/                     节点状态、轮次调度、路由、信息投影和分层预算
     services/                   威胁模型编译与通用奖励实现
-      experiments/             通用场景、试验执行、结果汇总
-      rewards/                 只依赖公开证据的可组合奖励
+      experiments/             通用 Trial/Session 场景、生命周期执行与结果汇总
+      rewards/                 逐轮公开证据奖励与中央 Episode 结果奖励
   infrastructure/
     settings/                   工作区发现、配置校验、独立环境快照
     plugins/                    已安装 entry point 发现与模式校验
@@ -68,12 +68,14 @@ CLI / prepare_file / run_file
  -> ExperimentWorkspace：选择唯一配置、生成独立环境快照
  -> load_config：读取 JSON/YAML 并做严格校验
  -> prepare_experiment：发现允许的组件、执行纯预检、校验凭证与引用、固定计划
- -> ScenarioProvider.plan：只返回 ExperimentPlan / TrialSpec
+ -> ScenarioProvider.plan：只返回 ExperimentPlan、独立 Trial 或有序 Session/Episode
  -> ThreatModelCompiler：将配置和固定计划编译为有效组件视图与摘要
  -> ExecutionBudget：创建全局、试验和节点额度，响应取消与截止时间
- -> ComponentSession：构造本次组件，注入已审计、已限额的模型和 codec
+ -> run_plan：Run -> Condition -> Session -> Episode，控制状态与失败传播
+ -> ComponentSession：为每个 Episode 构造组件，注入已审计、已限额的模型和 codec
  -> MultiAgentRuntime：局部观察 -> Policy.step -> 候选消息
- -> 环境 -> 信道变换 -> 公开检测 -> 奖励 -> 下一轮收件箱
+ -> 环境 -> 信道变换 -> 公开检测 -> Reward -> 下一轮收件箱
+ -> OutcomeReward：读取 Episode 结果与 truth，只向同 Session 下一 Episode 返回节点标量
  -> Evaluator：中央评分，不回填模型答案
  -> TracedAudit -> AuditJournal：调用链、研究/公开日志和关联封印
  -> AuditReader：默认核验后查询，只读取封印报告声明的试验
@@ -86,13 +88,16 @@ CLI / prepare_file / run_file
 
 ## 隔离与生命周期
 
-- shared_context 显式公开；node_contexts[id] 只给对应节点；truth 只给中央评价。
+- shared_context 显式公开；node_contexts[id] 只给对应节点；truth 只给中央评价和 OutcomeReward。
 - 每次标准运行生成 threat-model.json，记录实际组件视图、信任假设和计划/拓扑摘要。
 - 不把中央种子、试验编号和完整计划自动投影给节点。
 - 信道只能改公开正文或阻断，不能改变身份、轮次、目标或增加元数据。
 - 检测器只读最终公开消息，不能通过宿主接口读取私有比特或预共享密钥。
 - 奖励组件只读受限公开证据和裁剪后的检测信号；节点只获得自己的合成标量。
-- 模型和 codec 按试验及节点构造、缓存；所有权由宿主统一管理并逆序关闭。
+- OutcomeReward 只在中央 Episode 结束阶段读取 result/truth，不能访问或修改策略状态。
+- 策略状态只在同一 Session 内按节点原样延续；状态不序列化、不审计、不跨 Session。
+- 每个 Episode 都重置 Substrate、收件箱和上一动作；失败会跳过同 Session 的剩余 Episode。
+- 模型和 codec 按 Episode 及节点构造、缓存；所有权由宿主统一管理并逆序关闭。
 - 凭证只传给声明 credentials 的模型工厂，不传给策略、信道或评分器。
 - 内置模型适配不自动重试，不跟随重定向，不把鉴权头或服务端错误正文打印出来。
 - 插件自定义事件进入 plugin.event 命名空间，不能伪造宿主的公开投递事件。
@@ -116,9 +121,9 @@ CLI 和文件级 API 不能关闭宿主日志；写入失败中止，不生成�
 ## 开发验证
 
 公开仓库不包含测试文件。开发者本地 tests/contracts 维护纯框架回归，验证入口、拓扑、
-插件、预算、取消、资源关闭、公开投影、审计核验与四层依赖。
+插件、会话状态、结果反馈、预算、取消、资源关闭、公开投影、审计核验与四层依赖。
 本地具备测试集时，通过 python -m unittest discover -s tests/contracts -v 运行，并额外检查安装包脱离源码目录后能否工作。
 测试结果和临时配置不得回填 configs 或作为框架预置实验发布。
 
-0.10 的参数、状态和调用约定见 [内核控制与审计](kernel.md)，威胁模型见
+0.11 的参数、状态和调用约定见 [内核控制与审计](kernel.md)，威胁模型见
 [威胁模型与信息边界](threat_model.md)。

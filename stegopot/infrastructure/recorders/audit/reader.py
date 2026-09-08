@@ -38,6 +38,8 @@ class AuditReader:
   def events(
       self, *, scope: Literal["public", "research"] = "public",
       trial_id: str | None = None, node_id: str | None = None,
+      condition_id: str | None = None, session_id: str | None = None,
+      episode_id: str | None = None,
       round_index: int | None = None, message_id: str | None = None,
       call_id: str | None = None, span_id: str | None = None, kind: str | None = None,
   ) -> Iterator[dict[str, Any]]:
@@ -46,6 +48,9 @@ class AuditReader:
     参数：
       scope: public 默认只读公开白名单；research 须由调用者明确选择。
       trial_id: 试验 ID；兼容旧日志时使用子目录名称。
+      condition_id: Condition ID；旧式独立 Trial 没有该字段。
+      session_id: Session ID；旧式独立 Trial 没有该字段。
+      episode_id: Episode ID；Session 日志中与 trial_id 相同。
       node_id: 关联节点，消息事件也匹配公开发送者或接收者。
       round_index: 轮次，从 0 开始；None 不筛选。
       message_id: 实际消息 ID。
@@ -94,6 +99,9 @@ class AuditReader:
           if message_id is not None and message_id != identity and message_id not in inputs:
             continue
           if any(expected is not None and expected != actual for expected, actual in (
+              (condition_id, trace.get("condition_id")),
+              (session_id, trace.get("session_id")),
+              (episode_id, trace.get("episode_id")),
               (call_id, data.get("call_id")),
               (span_id, trace.get("span_id")), (kind, event.get("kind")))):
             continue

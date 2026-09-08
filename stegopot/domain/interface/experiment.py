@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
 from stegopot.domain.model.experiment import ExperimentPlan, TrialSpec
-from stegopot.domain.model.reward import RewardRequest
+from stegopot.domain.model.reward import EpisodeOutcomeRequest, RewardRequest
 
 
 class ScenarioProvider(Protocol):
@@ -32,4 +32,12 @@ class RewardFunction(Protocol):
 
   def score(self, request: RewardRequest) -> Mapping[str, float]:
     """接收不可变 request，不含未投递正文、私有最终答案或检测器诊断详情。"""
+    ...
+
+
+class OutcomeRewardFunction(Protocol):
+  """在 Episode 结束后根据中央真值计算下一 Episode 的私有反馈。"""
+
+  def score(self, request: EpisodeOutcomeRequest) -> Mapping[str, float]:
+    """读取实际结果和 truth，返回节点标量；宿主不会把 request 交给策略。"""
     ...

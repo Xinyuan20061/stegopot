@@ -69,6 +69,7 @@ core.scripted 是通用确定性策略，不是 LLM；core.echo 只用于规则�
 | channels | 按声明顺序执行的公开正文干预 |
 | detectors | 公开消息检测组件，不读取私有真值 |
 | rewards | 根据不可变 RewardRequest 计算节点标量反馈的组件，按声明顺序相加 |
+| outcome_rewards | Episode 结束后使用中央结果和 truth 计算下一 Episode 节点标量 |
 | evaluators | 中央评分器，保留成功、失败和跳过样本 |
 | audit_sinks | 可选研究事件接收器，不替代强制宿主审计 |
 | threat_model | 组件可见信息、插件信任前提和双审计投影；省略时使用最小公开范围 |
@@ -121,7 +122,50 @@ rewards:
 
 `core.delivery_reward` 只统计实际投递，阻断消息不计分。`core.detection_penalty`
 可选择二分类或连续分数，并以最大值或求和方式聚合同一消息的多个检测器结果。
-该机制提供多轮反馈，不负责更新模型权重，也不跨 Trial 保留策略状态。
+该机制提供同一 Episode 内的多轮反馈，不负责更新模型权重。
+
+### 连续 Session 与结果反馈
+
+`core.sessions` 使用 `Run -> Condition -> Session -> Episode -> Round` 生命周期。
+每个 Condition 声明稳定的节点、策略、拓扑和 Substrate，并通过 `session_count`
+生成独立重复。`persist_policy_state` 控制 Policy 返回的不透明状态是否在同一 Session
+的 Episode 间延续；无论是否延续状态，新的 Session 都会调用 `initial_state()`。
+
+```yaml
+scenario:
+  type: core.sessions
+  config:
+    conditions:
+      - id: treatment
+        session_count: 5
+        persist_policy_state: true
+        nodes:
+          - id: solver
+            policy: {type: your_plugin.solver}
+        edges: []
+        episodes:
+          - id: train
+            task: 完成训练样本
+            truth: {expected: answer-a}
+            max_rounds: 1
+          - id: test
+            task: 完成评估样本
+            truth: {expected: answer-b}
+            max_rounds: 1
+outcome_rewards:
+  - type: core.exact_match_outcome
+    config:
+      answer_node: solver
+      truth_key: expected
+      reward_nodes: [solver]
+      success_reward: 1.0
+      failure_reward: -1.0
+```
+
+每个 Episode 都会重建组件会话并重置环境、收件箱和上一动作。OutcomeReward 在
+Episode 结束后读取 `result + truth`，但下一 Episode 的 Policy 只能在
+`environment.framework.reward` 读取自己的合成标量。状态不写入报告或审计；
+前一 Episode 失败时，同 Session 后续 Episode 标记为跳过，其他 Session 继续运行。
 
 ## 模型请求
 
@@ -162,7 +206,7 @@ base_url 必须是无鉴权、查询参数或片段的 API 根地址，适配器
 thinking 和 reasoning_effort 仅在服务支持时填写；不兼容 JSON 模式时可选 response_format: text。
 客户端不跟随重定向、不自动重试，失败真实记录；一次 generate 最多一次 HTTP 请求。
 宿主限制调用数与输出 token，超时是连接/读超时，不是实验强制终止机制。
-0.10 另提供节点/试验调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
+0.11 另提供节点/Episode 调用额度、工具调用数、上下文与正文大小限制，以及协作式取消。
 参数、默认值、错误码和取消示例见 [内核控制与审计](kernel.md)。
 
 ## 核心隐写
@@ -203,6 +247,7 @@ python -m stegopot verify outputs/<run-id> --expected-seal-sha256 <独立保存�
 ```shell
 python -m stegopot events outputs/<run-id> --scope research --node sender --round 0
 python -m stegopot events outputs/<run-id> --scope research --trial <trial-id> --message <message-id>
+python -m stegopot events outputs/<run-id> --scope research --condition treatment --session treatment-session-0001
 ```
 
 research 查询含私有研究材料，不能直接公开；默认 public 不附加调用链字段。

@@ -143,14 +143,99 @@ class TrialSpec:
 
 
 @dataclass(frozen=True)
-class ExperimentPlan:
-  """场景产生的完整计划。trials 按顺序执行，evaluators 负责中央评分与汇总。"""
+class EpisodeSpec(TrialSpec):
+  """Session 内的一次任务交互。
 
-  trials: Sequence[TrialSpec]
-  evaluators: Sequence[ComponentSpec] = ()
+  Episode 复用 TrialSpec 的任务、节点、拓扑、环境、私有材料和中央真值契约；
+  ``episode_id`` 是兼容 ``trial_id`` 的只读别名，审计目录继续使用 trial_id。
+  """
+
+  @property
+  def episode_id(self) -> str:
+    """返回当前 Episode 的全局唯一标识。"""
+    return self.trial_id
+
+
+@dataclass(frozen=True)
+class SessionSpec:
+  """一组允许策略状态按顺序延续的 Episode。
+
+  属性：
+    session_id: 当前独立重复的唯一 ID。
+    condition_id: 当前 Session 所属实验条件 ID。
+    episodes: 按执行顺序排列的 Episode；节点、策略、拓扑和 Substrate 必须一致。
+    persist_policy_state: 是否把前一 Episode 的节点策略状态带入下一 Episode。
+  """
+
+  session_id: str
+  condition_id: str
+  episodes: Sequence[EpisodeSpec]
+  persist_policy_state: bool = True
 
   def __post_init__(self) -> None:
-    trials = tuple(self.trials)
+    validate_id(self.session_id)
+    validate_id(self.condition_id)
+    if type(self.persist_policy_state) is not bool:
+      raise TypeError("persist_policy_state 必须是 bool")
+    episodes = tuple(self.episodes)
+    if not episodes or any(not isinstance(item, EpisodeSpec) for item in episodes):
+      raise ValueError("SessionSpec.episodes 必须是非空 EpisodeSpec 序列")
+    if len({item.episode_id for item in episodes}) != len(episodes):
+      raise ValueError("同一 Session 的 episode_id 不能重复")
+    if any(item.replay is not None for item in episodes):
+      raise ValueError("Session 内不支持配对重放；重放应声明为独立 Trial")
+    baseline = episodes[0]
+    baseline_nodes = [node.to_dict() for node in baseline.nodes]
+    for episode in episodes[1:]:
+      if ([node.to_dict() for node in episode.nodes] != baseline_nodes
+          or episode.edges != baseline.edges
+          or episode.substrate != baseline.substrate):
+        raise ValueError(
+            "同一 Session 的节点、策略、拓扑和 Substrate 必须保持一致"
+        )
+    object.__setattr__(self, "episodes", episodes)
+
+  def to_dict(self) -> dict[str, Any]:
+    """返回会话元数据和有序 Episode 引用，不重复嵌入完整试验计划。"""
+    return {
+        "session_id": self.session_id,
+        "condition_id": self.condition_id,
+        "episode_ids": [item.episode_id for item in self.episodes],
+        "persist_policy_state": self.persist_policy_state,
+    }
+
+
+@dataclass(frozen=True)
+class ExperimentPlan:
+  """场景产生的完整计划。
+
+  ``trials`` 保存独立旧式试验；``sessions`` 保存具备 Episode 生命周期的
+  独立重复。初始化后 trials 会规范化为全部实际执行单元的扁平列表，以兼容
+  既有报告、重放和完整性核验。
+  """
+
+  trials: Sequence[TrialSpec] = ()
+  evaluators: Sequence[ComponentSpec] = ()
+  sessions: Sequence[SessionSpec] = ()
+  outcome_rewards: Sequence[ComponentSpec] = ()
+  _standalone_trial_ids: tuple[str, ...] = field(
+      init=False,
+      repr=False,
+      default=(),
+  )
+
+  def __post_init__(self) -> None:
+    standalone = tuple(self.trials)
+    sessions = tuple(self.sessions)
+    if any(not isinstance(item, SessionSpec) for item in sessions):
+      raise TypeError("ExperimentPlan.sessions 必须是 SessionSpec 序列")
+    if len({item.session_id for item in sessions}) != len(sessions):
+      raise ValueError("session_id 不能重复")
+    trials = standalone + tuple(
+        episode
+        for session in sessions
+        for episode in session.episodes
+    )
     if not 1 <= len(trials) <= 10000:
       raise ValueError("试验数量必须为 1 至 10000")
     seen = set()
@@ -162,8 +247,23 @@ class ExperimentPlan:
       seen.add(trial.trial_id)
     object.__setattr__(self, "trials", trials)
     object.__setattr__(self, "evaluators", tuple(self.evaluators))
+    object.__setattr__(self, "sessions", sessions)
+    object.__setattr__(self, "outcome_rewards", tuple(self.outcome_rewards))
+    object.__setattr__(
+        self,
+        "_standalone_trial_ids",
+        tuple(item.trial_id for item in standalone),
+    )
+
+  @property
+  def standalone_trials(self) -> tuple[TrialSpec, ...]:
+    """返回不属于 Session 的旧式独立试验。"""
+    identifiers = set(self._standalone_trial_ids)
+    return tuple(item for item in self.trials if item.trial_id in identifiers)
 
   def to_dict(self) -> dict[str, Any]:
     """返回执行前应固定并保存的标准计划。"""
     return {"trials": [trial.to_dict() for trial in self.trials],
-            "evaluators": [item.to_dict() for item in self.evaluators]}
+            "sessions": [session.to_dict() for session in self.sessions],
+            "evaluators": [item.to_dict() for item in self.evaluators],
+            "outcome_rewards": [item.to_dict() for item in self.outcome_rewards]}

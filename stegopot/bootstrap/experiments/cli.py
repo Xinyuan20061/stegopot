@@ -52,6 +52,9 @@ def _parser() -> argparse.ArgumentParser:
   events.add_argument("directory", help="实验结果目录")
   events.add_argument("--scope", choices=("public", "research"), default="public", help="research 含私有研究数据，不能直接公开")
   events.add_argument("--trial", help="试验 ID")
+  events.add_argument("--condition", help="实验条件 ID")
+  events.add_argument("--session", help="独立 Session ID")
+  events.add_argument("--episode", help="Session 内 Episode ID")
   events.add_argument("--node", help="节点 ID")
   events.add_argument("--round", dest="round_index", type=int, help="轮次，从 0 开始")
   events.add_argument("--message", help="消息 ID")
@@ -113,6 +116,8 @@ def main(argv: Sequence[str] | None = None) -> int:
       reader = AuditReader(args.directory, verify=not args.unverified,
                            expected_seal_sha256=args.expected_seal_sha256)
       records = reader.events(scope=args.scope, trial_id=args.trial, node_id=args.node,
+                               condition_id=args.condition, session_id=args.session,
+                               episode_id=args.episode,
                                round_index=args.round_index, message_id=args.message,
                                call_id=args.call, span_id=args.span, kind=args.kind)
       payload = {"verified": reader.verified, "scope": args.scope,

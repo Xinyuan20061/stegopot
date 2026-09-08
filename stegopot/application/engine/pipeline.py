@@ -34,7 +34,7 @@ class ExperimentPipeline(Substrate):
       threat_model: ThreatModelManifest,
       control: ExecutionGuard | None = None,
   ) -> None:
-    """创建每次试验独享的环境管线。
+    """创建每个独立 Trial 或 Episode 独享的环境管线。
 
     参数：
       inner: 负责世界状态的基础环境，必须由组合根注入。
@@ -66,7 +66,7 @@ class ExperimentPipeline(Substrate):
     self._ids = set(context.node_ids)
     if set(self._private) - self._ids:
       raise ValueError("私有上下文引用未知节点")
-    self._feedback = {}
+    self._feedback = dict(context.initial_rewards)
     self._public = []
     self._reset_context = context
     self._checkpoint()

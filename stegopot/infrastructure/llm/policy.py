@@ -18,7 +18,7 @@ from stegopot.infrastructure.llm.prompt import PromptBuilder
 
 @dataclasses.dataclass(frozen=True)
 class LLMState:
-  """LLM 节点在一次实验中的可复现状态。
+  """LLM 节点在当前 Session 中可延续的不透明状态。
 
   属性：
     messages: 当前节点保留的模型消息历史。

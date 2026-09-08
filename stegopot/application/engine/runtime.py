@@ -252,12 +252,17 @@ class MultiAgentRuntime:
       task: str,
       *,
       shared_context: Mapping[str, Any] | None = None,
+      initial_policy_states: Mapping[str, Any] | None = None,
+      initial_rewards: Mapping[str, float] | None = None,
   ) -> RunResult:
     """执行实验并记录开始、完成或异常，不改变原同步调度语义。
 
     参数：
       task: 全部节点可见的任务文本，不应含节点私有信息。
       shared_context: 对全部节点公开的背景；私有信息应由环境逐节点提供。
+      initial_policy_states: 同一 Session 前一 Episode 的节点策略状态；为空时
+        全部策略使用 initial_state，映射必须完整对应当前节点。
+      initial_rewards: 上一 Episode 的节点标量反馈；只由环境按节点投影。
 
     返回：
       完整运行结果；失败时保留已产生的审计事件并向调用者抛出异常。
@@ -266,9 +271,15 @@ class MultiAgentRuntime:
         "task": task, "topology": self._topology.to_dict(),
         "config": dataclasses.asdict(self._config),
         "shared_context": dict(shared_context or {}),
+        "initial_rewards": dict(initial_rewards or {}),
     })
     try:
-      result = self._run(task, shared_context=shared_context)
+      result = self._run(
+          task,
+          shared_context=shared_context,
+          initial_policy_states=initial_policy_states,
+          initial_rewards=initial_rewards,
+      )
     except Exception as exc:
       self._audit("runtime.failed", data={
           "error_type": type(exc).__name__, "error": str(exc), "failure": error_details(exc),
@@ -282,12 +293,16 @@ class MultiAgentRuntime:
       task: str,
       *,
       shared_context: Mapping[str, Any] | None = None,
+      initial_policy_states: Mapping[str, Any] | None = None,
+      initial_rewards: Mapping[str, float] | None = None,
   ) -> RunResult:
     """运行一次完整的多智能体交互。
 
     参数：
       task: 全部节点共同接收的任务文本。
       shared_context: 全部节点都可见的结构化背景信息。
+      initial_policy_states: 同一 Session 内恢复的完整节点状态映射。
+      initial_rewards: 在当前 Episode 首轮提供给各节点的上次反馈。
 
     返回：
       包含轮次、消息转录、最终答案和终止原因的运行结果。
@@ -296,13 +311,14 @@ class MultiAgentRuntime:
       raise ValueError("task 必须是非空字符串")
     context = MappingProxyType(dict(shared_context or {}))
     self._checkpoint()
-    self._reset_nodes()
+    self._reset_nodes(initial_policy_states)
     self._router.reset()
     self._substrate.reset(SubstrateResetContext(
         task=task.strip(),
         node_ids=self._topology.nodes,
         shared_context=context,
         topology=self._topology.to_dict(),
+        initial_rewards=initial_rewards or {},
     ))
 
     inboxes: dict[str, list[AgentMessage]] = {
@@ -455,6 +471,13 @@ class MultiAgentRuntime:
       node.close()
     self._substrate.close()
 
+  def policy_states(self) -> Mapping[str, Any]:
+    """返回全部节点当前不透明状态；调用方不得记录或跨 Session 复用。"""
+    return MappingProxyType({
+        node_id: self._nodes[node_id].export_state()
+        for node_id in self._topology.nodes
+    })
+
   def _checkpoint(self) -> None:
     """在宿主边界检查取消和预算；低层嵌入未注入控制器时保持原行为。"""
     if self._control is not None:
@@ -496,11 +519,20 @@ class MultiAgentRuntime:
             f"节点映射键 {node_id} 与 AgentNode.node_id {node.node_id} 不一致"
         )
 
-  def _reset_nodes(self) -> None:
-    """按拓扑顺序重置全部节点。"""
+  def _reset_nodes(
+      self,
+      initial_policy_states: Mapping[str, Any] | None,
+  ) -> None:
+    """按拓扑顺序初始化节点，或恢复同一 Session 的完整状态。"""
+    if initial_policy_states is not None:
+      if set(initial_policy_states) != set(self._topology.nodes):
+        raise ValueError("恢复策略状态必须完整对应当前 Session 的节点")
     for node_id in self._topology.nodes:
       self._checkpoint()
-      self._nodes[node_id].reset()
+      if initial_policy_states is None:
+        self._nodes[node_id].reset()
+      else:
+        self._nodes[node_id].reset(initial_policy_states[node_id])
 
   def _execute_node(
       self,

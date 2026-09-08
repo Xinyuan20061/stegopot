@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Any
 
 from stegopot.domain.model.message import AgentMessage
+from stegopot.domain.model.experiment import json_copy, validate_id
 
 
 @dataclasses.dataclass(frozen=True)
@@ -174,3 +175,80 @@ class RewardRequest(Mapping[str, Any]):
   def __len__(self) -> int:
     """返回兼容映射键的数量。"""
     return len(self._KEYS)
+
+
+class EpisodeOutcomeRequest:
+  """Episode 结束后交给中央结果奖励器的只读请求。
+
+  ``result`` 与 ``truth`` 每次访问都会返回独立 JSON 副本。该请求只交给
+  受信任的 outcome_reward 组件，不进入 Policy、Detector 或公开审计。
+  """
+
+  __slots__ = (
+      "_condition_id",
+      "_session_id",
+      "_episode_id",
+      "_result",
+      "_truth",
+  )
+
+  def __init__(
+      self,
+      *,
+      condition_id: str,
+      session_id: str,
+      episode_id: str,
+      result: Mapping[str, Any],
+      truth: Mapping[str, Any],
+  ) -> None:
+    """创建中央结果奖励请求。
+
+    参数：
+      condition_id: 当前实验条件 ID。
+      session_id: 当前独立重复 ID。
+      episode_id: 当前 Episode 的全局唯一 ID。
+      result: 已完成运行的实际结果，不含节点策略内部状态。
+      truth: 当前 Episode 的中央真值，只授权给结果奖励器和评价器。
+    """
+    self._condition_id = validate_id(condition_id)
+    self._session_id = validate_id(session_id)
+    self._episode_id = validate_id(episode_id)
+    if not isinstance(result, Mapping) or not isinstance(truth, Mapping):
+      raise TypeError("EpisodeOutcomeRequest.result/truth 必须是映射")
+    self._result = json_copy(dict(result))
+    self._truth = json_copy(dict(truth))
+
+  @property
+  def condition_id(self) -> str:
+    """返回当前实验条件 ID。"""
+    return self._condition_id
+
+  @property
+  def session_id(self) -> str:
+    """返回当前独立 Session ID。"""
+    return self._session_id
+
+  @property
+  def episode_id(self) -> str:
+    """返回当前 Episode ID。"""
+    return self._episode_id
+
+  @property
+  def result(self) -> Mapping[str, Any]:
+    """返回实际运行结果的独立只读副本。"""
+    return MappingProxyType(json_copy(self._result))
+
+  @property
+  def truth(self) -> Mapping[str, Any]:
+    """返回中央真值的独立只读副本。"""
+    return MappingProxyType(json_copy(self._truth))
+
+  def to_dict(self) -> dict[str, Any]:
+    """返回适合研究审计的中央请求副本。"""
+    return {
+        "condition_id": self.condition_id,
+        "session_id": self.session_id,
+        "episode_id": self.episode_id,
+        "result": json_copy(self._result),
+        "truth": json_copy(self._truth),
+    }

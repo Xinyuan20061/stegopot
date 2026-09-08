@@ -1,4 +1,4 @@
-"""每次试验的组件组装和受限资源注入。"""
+"""每个独立 Trial 或 Episode 的组件组装和受限资源注入。"""
 
 from collections.abc import Mapping
 from contextlib import ExitStack
@@ -54,7 +54,7 @@ class _Context:
 
 
 class ComponentSession:
-  """每个试验使用新会话；缓存仅属于该会话，资源在结束时逆序关闭。"""
+  """每个执行单元使用新组件会话；缓存局部所有，资源在结束时逆序关闭。"""
 
   def __init__(
       self, catalog: PluginCatalog, *, resources: Mapping[str, ComponentSpec],
@@ -124,6 +124,7 @@ class ComponentSession:
         "llm": ("generate", "close"), "substrate": ("reset", "observe", "step", "state", "close"),
         "channel": ("transform",), "codec": ("encode", "decode", "close"),
         "detector": ("reset", "detect", "close"), "reward": ("score",),
+        "outcome_reward": ("score",),
         "evaluator": ("evaluate", "summarize"), "audit": ("emit",),
     }[kind]
     if any(not callable(getattr(instance, method, None)) for method in required):

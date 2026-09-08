@@ -10,11 +10,32 @@ from uuid import uuid4
 class TracedAudit:
   """为标准 Mapping 事件补充关联字段；不依赖应用结果类型，也不拥有底层存储。"""
 
-  def __init__(self, sink: Any, *, run_id: str, trial_id: str | None = None) -> None:
-    """绑定 sink、整组 run_id 和可选 trial_id；每个实例使用独立上下文变量。"""
+  def __init__(
+      self,
+      sink: Any,
+      *,
+      run_id: str,
+      trial_id: str | None = None,
+      condition_id: str | None = None,
+      session_id: str | None = None,
+      episode_id: str | None = None,
+  ) -> None:
+    """绑定宿主控制的生命周期身份。
+
+    参数：
+      sink: 接收标准审计事件的底层存储或复合接收器。
+      run_id: 整组实验运行 ID。
+      trial_id: 兼容旧报告的执行单元 ID。
+      condition_id: 可选实验条件 ID。
+      session_id: 可选独立重复 ID。
+      episode_id: 可选 Session 内 Episode ID。
+    """
     self._sink = sink
     self._run_id = run_id
     self._trial_id = trial_id
+    self._condition_id = condition_id
+    self._session_id = session_id
+    self._episode_id = episode_id
     self._current: ContextVar[dict[str, Any] | None] = ContextVar("stegopot_trace", default=None)
 
   def emit(self, event: Mapping[str, Any]) -> None:
@@ -26,8 +47,15 @@ class TracedAudit:
       frame["node_id"] = actor
     if round_index is not None:
       frame["round_index"] = round_index
-    trace = {"schema_version": "stegopot.trace/1", "run_id": self._run_id,
-             "trial_id": self._trial_id, **frame}
+    trace = {
+        "schema_version": "stegopot.trace/1",
+        "run_id": self._run_id,
+        "trial_id": self._trial_id,
+        "condition_id": self._condition_id,
+        "session_id": self._session_id,
+        "episode_id": self._episode_id,
+        **frame,
+    }
     self._sink.emit({**event, "actor": frame.get("node_id"),
                      "round_index": frame.get("round_index"), "trace": trace})
 

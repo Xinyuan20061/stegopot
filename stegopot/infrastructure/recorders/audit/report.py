@@ -13,11 +13,24 @@ def render_report(report: Mapping) -> str:
            "## 逐次试验", ""]
   for record in report["trials"]:
     lines.extend([f"### {record['trial']['trial_id']}", "", f"状态：{record['status']}", ""])
+    if record.get("session_id"):
+      lines.extend([
+          "生命周期：" + " / ".join((
+              record["condition_id"],
+              record["session_id"],
+              record["episode_id"],
+          )),
+          "",
+      ])
     for message in record["result"].get("messages", []):
       lines.append(f"{message['sender']} -> {message['recipient']}")
       lines.extend("    " + line for line in message["content"].splitlines())
       lines.append("")
     lines.append("    " + json.dumps(record["result"].get("final_answers", {}), ensure_ascii=False))
+    if record.get("outcome_rewards"):
+      lines.append("    结果奖励：" + json.dumps(record["outcome_rewards"], ensure_ascii=False))
+    if record.get("feedback"):
+      lines.append("    下次反馈：" + json.dumps(record["feedback"], ensure_ascii=False))
     if record.get("error") or record.get("skip_reason"):
       lines.append("    " + json.dumps(record.get("error") or record["skip_reason"], ensure_ascii=False))
     lines.append("")

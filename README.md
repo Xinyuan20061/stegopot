@@ -11,13 +11,13 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 研究者可以组合内置组件开展实验，也可以通过独立插件实现新的策略、协议、检测方法和评价指标。
 命令行与 Python API 共用同一条执行链路，实验工作区可独立于框架安装目录。
 
-**框架版本：0.10.0 · 插件接口版本：1.2 · Python：3.11+**
+**框架版本：0.11.0 · 插件接口版本：1.3 · Python：3.11+**
 
 ## 目录
 
 - [框架能力](#框架能力)
 - [威胁模型](#威胁模型)
-- [激励闭环](#激励闭环)
+- [会话与激励闭环](#会话与激励闭环)
 - [项目结构](#项目结构)
 - [安装](#安装)
 - [首次运行](#首次运行)
@@ -38,18 +38,19 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 
 | 能力 | 可以完成的工作 | 前提与边界 |
 | --- | --- | --- |
-| 多 Agent 交互 | 自定义节点、角色、定向通信边、轮次和局部状态 | 当前是同步轮次调度，不是分布式执行系统 |
+| 多 Agent 交互 | 自定义节点、角色、定向通信边、Episode、轮次和局部状态 | 当前是同步轮次调度，不是分布式执行系统 |
 | 模型驱动决策 | 为不同节点设置模型、提示、采样参数和历史保留 | 使用兼容 Chat Completions 的服务，或实现 LLMClient |
 | 隐写通信 | 编码私有比特、传递公开文本、从实际接收载体恢复比特 | 内置 StegoKit；通常需要本地语言模型及隐写依赖 |
 | 信息隔离 | 分离公开任务、节点私有材料、预共享材料与中央真值 | 可信组件的接口约束，不是恶意代码沙箱 |
 | 威胁模型清单 | 固定组件视图、信任假设、计划摘要和拓扑摘要 | 保证宿主接口一致性，不提供操作系统隔离 |
 | 信道干预 | 阻断或替换正文，扩展新的文本变换 | 不允许修改消息身份或另加传输元数据 |
-| 检测、奖励与评价 | 将受限 Detector 信号转换为节点私有标量反馈，并执行中央评分 | 奖励可驱动上下文内适应，但不自动训练或更新模型权重 |
-| 重复与配对运行 | 重复执行显式场景，按计划重放前序实际消息 | 复杂配对设计由场景插件生成，不能凭空补造载体 |
+| 检测、奖励与评价 | 支持逐轮公开证据奖励、Episode 结果奖励与中央评分 | 奖励可驱动 Session 内适应，但不自动训练或更新模型权重 |
+| 连续会话 | 按 Condition 生成独立 Session，在 Episode 间延续策略状态和标量反馈 | 环境、收件箱和上一动作每个 Episode 都会重置；状态不跨 Session |
+| 重复与配对运行 | 重复执行会话或显式场景，按计划重放前序实际消息 | 配对重放只用于独立 Trial，不能凭空补造载体 |
 | 预检与诊断 | 检查节点轮次、发送目标、私有材料及本地隐写资源文件 | 离线检查不代表远程服务或本地推理一定可用 |
 | 执行控制 | 整组、试验和节点调用预算，载荷上限与协作式取消 | 不强制终止已开始的请求，不提供硬费用保证 |
 | 审计与复核 | 保存配置、计划、真实调用、因果链、失败和关联封印，按消息或调用查询 | CLI 与文件级 API 强制审计；完整研究记录不可直接公开 |
-| 开放扩展 | 十类组件统一注册、校验和按需构造 | 插件需要安装并显式启用，不能覆盖核心组件 |
+| 开放扩展 | 十一类组件统一注册、校验和按需构造 | 插件需要安装并显式启用，不能覆盖核心组件 |
 
 **StegoKit、基础检测、信息隔离和审计属于核心能力。**
 具体任务、研究假设和实验协议由配置或插件定义，框架负责一致的执行与记录。
@@ -58,20 +59,24 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 
 | 概念 | 职责 |
 | --- | --- |
-| AgentNode | 保存节点身份、角色及本次试验的策略状态 |
+| AgentNode | 保存节点身份、角色及当前 Session 内的不透明策略状态 |
 | Policy | 将节点局部观察和上一状态转换为动作与下一状态 |
 | Substrate | 管理环境状态，提供局部观察，并处理一轮候选动作与消息 |
 | Scenario / Plan | 根据配置生成试验计划，描述节点、拓扑、环境和评价安排 |
-| Trial / Run | Trial 是一次独立试验；Run 执行完整计划，可包含多个 Trial |
+| Run / Condition | Run 是完整实验；Condition 表示需要比较的实验条件 |
+| Session / Episode | Session 是独立重复；Episode 是其中按顺序运行的一次任务交互 |
+| Trial / Round | Trial 保留为独立试验和 Episode 兼容表示；Round 是同步交互轮次 |
 | Resource | 按名称声明的模型或 codec，由框架按作用域构造并注入组件 |
 | Threat Model | 声明组件可见信息和信任前提，运行前编译成可封印清单 |
 | RewardRequest | 固定一轮的公开动作摘要、实际投递消息和受限检测信号 |
+| EpisodeOutcomeRequest | Episode 结束后的中央结果、真值及生命周期身份 |
 | Audit | 记录执行事实，分别提供研究视图、公开视图及完整性核验 |
 
 ```text
-用户配置 -> 预检与计划 -> 构造节点和资源 -> 同步轮次交互
-                                      -> 环境 / 信道 / 检测 / 奖励
-                                      -> 中央评价 -> 报告与审计封印
+用户配置 -> 预检与计划 -> Condition -> Session -> Episode -> 同步 Round
+                                                       -> 环境 / 信道 / 检测 / Reward
+                         下一 Episode <- 标量反馈 <- OutcomeReward <- 结果与 truth
+                                                       -> 中央评价 -> 报告与审计封印
 ```
 
 ### 内置组件
@@ -79,6 +84,7 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 | 组件 ID | 类型 | 用途 |
 | --- | --- | --- |
 | `core.explicit` | scenario | 根据显式节点和通信边生成一次或多次试验 |
+| `core.sessions` | scenario | 展开 Condition、独立 Session 和有序 Episode |
 | `core.communication` | substrate | 基础消息通信环境 |
 | `core.scripted` / `core.echo` | policy | 预设动作序列 / 根据收件箱生成最终答案 |
 | `core.llm` | policy | 使用模型根据局部观察生成动作 |
@@ -89,6 +95,7 @@ StegoPot 是面向多智能体隐写研究的 Python 实验框架。通过 YAML 
 | `core.keyword` / `core.llm_detector` | detector | 关键词检测基线 / 模型判别器 |
 | `core.delivery_reward` | reward | 按实际投递消息向发送节点提供固定收益 |
 | `core.detection_penalty` | reward | 按二分类或风险分数惩罚被检测消息的发送节点 |
+| `core.exact_match_outcome` | outcome_reward | 比较指定节点最终答案与 truth，并生成下一 Episode 标量反馈 |
 | `core.metrics` / `core.stego_metrics` | evaluator | 基础运行统计 / 比特恢复指标 |
 
 检测结果用于研究评价，其有效性需要在目标数据与威胁模型下验证。
@@ -121,15 +128,30 @@ threat_model:
 威胁模型编译、工件和封印属于 `run_file`/CLI 标准实验入口；直接使用
 `MultiAgentBuilder` 只是低层嵌入方式，不会自动生成可核验研究工件。
 
-## 激励闭环
+## 会话与激励闭环
 
-`v0.10.0` 将检测与奖励接入同一条受控执行链：
+`v0.11.0` 提供固定的五级生命周期：
+
+```text
+Run
+  Condition                一组可比较的实验条件
+    Session                条件内的一次独立重复
+      Episode              有序任务样本，策略状态可在同 Session 延续
+        Round              同步动作、路由、环境、检测与逐轮奖励
+```
+
+`core.sessions` 负责从配置展开 Condition、Session 和 Episode。相同 Session 的节点、
+策略、拓扑和 Substrate 声明保持一致；每个 Episode 都创建新的组件会话并重置环境、
+收件箱和上一动作。`persist_policy_state: true` 时，宿主只把每个 Policy 返回的不透明
+状态原样交给同一 Session 的下一 Episode；状态不序列化、不审计，也不跨 Session。
+
+框架提供两条彼此隔离的反馈通道。逐轮 Reward 使用公开交互证据：
 
 ```text
 候选消息 -> Substrate -> Channel -> 实际公开投递 -> Detector
                                                -> RewardRequest
                                                -> Reward
-                                               -> 发送节点下一轮私有标量反馈
+                                               -> 同一 Episode 下一轮私有标量
 ```
 
 Reward 获得的 `RewardRequest` 只包含动作类型/目标、实际投递消息，以及检测器的
@@ -137,29 +159,81 @@ ID、二分类判定、分数和置信度。检测理由、任意元数据、检
 其他节点私有材料和中央真值均不会进入 Reward。完整证据与奖励结果只写入研究审计；
 Agent 下一轮只能在自己的 `environment.framework.reward` 中读取合成后的标量。
 
-下面的配置片段把每条成功投递计为 `+1`，再按关键词检测结果施加 `-2` 惩罚：
+Episode 结束后，OutcomeReward 才能在受信任中央阶段读取实际 `result + truth`：
+
+```text
+Episode result + central truth -> EpisodeOutcomeRequest -> OutcomeReward
+                                                   -> 节点标量反馈
+                                                   -> 同 Session 下一 Episode 首轮观察
+```
+
+Policy 不会得到 `EpisodeOutcomeRequest`、中央真值、其他节点反馈或奖励器对象，只能读取
+自己的合成标量。逐轮累计奖励与全部 OutcomeReward 返回值按节点相加；若当前 Episode
+失败，后续 Episode 会明确标记为跳过，不延续状态或反馈。
+
+下面的片段把每条成功投递计为 `+1`，再按关键词检测结果施加 `-2` 惩罚：
 
 ```yaml
 detectors:
   - type: core.keyword
     config:
       keywords: [suspicious-marker]
-
 rewards:
   - type: core.delivery_reward
-    config:
-      points: 1.0
+    config: {points: 1.0}
   - type: core.detection_penalty
-    config:
-      penalty: 2.0
-      mode: binary
-      aggregation: max
+    config: {penalty: 2.0, mode: binary, aggregation: max}
 ```
 
-奖励组件按配置顺序执行，返回值与 Substrate 奖励相加。同一消息由多个检测器检查时，
-`aggregation: max` 采用最大风险，`sum` 累加风险。`mode: score` 使用连续分数，
-`binary` 使用 `is_suspicious` 的 0/1 判定。该闭环可以支持激励驱动的连续多轮观察，
-但不等于强化学习训练，也不能单凭一次输出证明模型自主形成了隐写协议。
+以下配置展示两个有序 Episode 和一个中央精确匹配反馈器：
+
+```yaml
+schema_version: "1"
+resources:
+  deepseek:
+    type: core.chat_completions
+    config:
+      base_url: https://api.deepseek.com
+      model: replace-with-account-model
+      api_key_env: DEEPSEEK_API_KEY
+scenario:
+  type: core.sessions
+  config:
+    conditions:
+      - id: incentive
+        session_count: 3
+        persist_policy_state: true
+        nodes:
+          - id: agent
+            role: solver
+            policy:
+              type: core.llm
+              config: {client: deepseek, action_kind: final_answer}
+        edges: []
+        episodes:
+          - id: train
+            task: "返回给定样本的答案"
+            shared_context: {sample: "A"}
+            truth: {expected: "B"}
+            max_rounds: 1
+          - id: evaluate
+            task: "根据先前反馈完成新样本"
+            shared_context: {sample: "C"}
+            truth: {expected: "D"}
+            max_rounds: 1
+outcome_rewards:
+  - type: core.exact_match_outcome
+    config:
+      answer_node: agent
+      truth_key: expected
+      reward_nodes: [agent]
+      success_reward: 1.0
+      failure_reward: -1.0
+```
+
+将 `model` 替换为账户实际可用型号，并在工作区 `.env` 设置 `DEEPSEEK_API_KEY`。
+该机制支持上下文内适应，但不等于强化学习训练，也不保证模型一定学习。实验结论应
+使用多个独立 Session、对照 Condition、预注册指标和完整审计，而不是依赖单次输出。
 
 ## 项目结构
 
@@ -553,6 +627,7 @@ config:
 | `channels` | 按配置顺序执行的公开正文干预 |
 | `detectors` | 检测最终公开消息的组件，不自动据此阻断消息 |
 | `rewards` | 根据不可变 RewardRequest 计算节点反馈的组件；结果按顺序相加 |
+| `outcome_rewards` | Episode 结束后读取中央结果与 truth，生成同 Session 下一 Episode 的节点标量反馈 |
 | `evaluators` | 额外中央评分器，结果使用组件 ID 命名空间 |
 | `audit_sinks` | 附加研究审计接收器，不替代或关闭宿主日志 |
 | `threat_model` | 组件视图、插件信任前提和双审计投影；省略时使用最小公开范围 |
@@ -563,6 +638,12 @@ config:
 `repeat`、`substrate`、`shared_context`、`node_contexts`、`truth`。
 每个节点必填 `id`、`policy`，可选 `role`。
 默认环境为 `core.communication`，默认 2 轮、1 次试验。
+
+`core.sessions.config.conditions` 是非空条件列表。每个 Condition 必填 `id`、`nodes`、
+`edges`、`episodes`，可选 `session_count`、`persist_policy_state` 和 `substrate`。
+每个 Episode 必填 `id`、`task`，可选 `shared_context`、`node_contexts`、`truth`、
+`max_rounds`。Episode 短 ID 会与 Session ID 组合为全局执行 ID。一个 Session 中的节点、
+策略、拓扑和 Substrate 必须一致；配对 `ReplaySpec` 只允许用于独立 Trial。
 
 解析器拒绝未知字段、重复键、YAML 锚点/别名、对象构造标签和大于 2 MB 的配置。
 不执行配置中的 Python 表达式，不进行任意环境变量插值。
@@ -578,7 +659,7 @@ config:
 | `max_message_bytes` | 65536 | 单条正文的 UTF-8 字节数 |
 | `max_context_bytes` | 1000000 | 单次上下文的 JSON UTF-8 字节数 |
 | `max_rounds` | 100 | 每次试验允许的计划轮数 |
-| `max_trials` | 1000 | 计划试验总数 |
+| `max_trials` | 1000 | 计划执行单元总数；包含独立 Trial 和全部 Episode |
 | `max_seconds` | 3600 | 执行阶段的协作式截止秒数 |
 
 还可设置 `max_model_calls_per_trial`、`max_model_calls_per_node`、
@@ -613,7 +694,7 @@ config:
 | `plugins inspect <ID>` | 显式加载指定插件，输出组件参数与依赖声明 |
 | `schema [--component ID]` | 输出顶层或指定内置组件的 JSON Schema |
 | `verify <运行目录>` | 离线核验报告、日志及关联封印 |
-| `events <运行目录>` | 默认核验后查询公开事件；可显式选 research 并按节点、消息或调用筛选 |
+| `events <运行目录>` | 默认核验后查询公开事件；可按 Condition、Session、Episode、节点、消息或调用筛选 |
 | `--version` / `--help` | 查看版本或帮助 |
 
 `run`、`validate` 和 `doctor` 都支持 `--env-file` 或 `--no-env`，两者互斥。
@@ -695,7 +776,8 @@ action, next_state = policy.step(observation=observation, prev_state=state)
 | 广播 | message 的 target 为 null、`*`、`broadcast` 或 `all` 时广播给出邻居，不向无边节点发送 |
 | 最终答案 | final_answer 写入该节点结果，不作为消息投递给其他节点 |
 | 标准试验 | 由计划轮数调度；单个节点给出 final_answer 不代表整组实验立即结束 |
-| 状态 | 初始状态属于本次节点运行，不隐式共享其他节点的内部状态 |
+| 状态 | 只在声明允许的同一 Session 内按节点延续，不共享给其他节点，也不写入工件 |
+| Episode 重置 | 每次重建环境、组件会话、收件箱和上一动作；只接收自己的前序标量与可选策略状态 |
 
 LLM 通过 JSON 表达相同动作，例如：
 
@@ -716,14 +798,15 @@ LLM 通过 JSON 表达相同动作，例如：
 
 | kind | 主要调用 | 返回与责任 |
 | --- | --- | --- |
-| scenario | `plan(seed)` | 返回 ExperimentPlan；只生成 TrialSpec，不执行模型或自行运行实验 |
-| policy | `initial_state()`、`step(observation, prev_state)`、`close()` | 返回 AgentAction 与下一状态，只处理节点局部观察 |
+| scenario | `plan(seed)` | 返回 ExperimentPlan；可生成独立 Trial 或 Condition/Session/Episode，不执行模型 |
+| policy | `initial_state()`、`step(observation, prev_state)`、`close()` | 返回 AgentAction 与下一状态；状态可在同 Session 延续但不得拥有运行资源 |
 | llm | `generate(messages, *, model, temperature, max_tokens)`、`close()` | 返回 LLMResponse，保留实际文本与真实响应元数据 |
 | codec | `encode(request)`、`decode(request)`、`close()` | 返回 EncodeResult / DecodeResult；只通过实际载体与授权材料解码 |
 | substrate | `reset(context)`、`observe(node_id)`、`step(context)`、`state()`、`close()` | 管理环境状态，step 返回 SubstrateStepResult |
 | channel | `transform(message)` | 返回同身份 AgentMessage 或 None 阻断；不能改变 ID、主体、轮次或增加元数据 |
 | detector | `reset()`、`detect(request)`、`close()` | 返回与请求 message_id 一致的 DetectionResult |
 | reward | `score(request)` | 读取不可变 RewardRequest，返回现有节点 ID 到有限数值奖励的映射 |
+| outcome_reward | `score(request)` | 读取 EpisodeOutcomeRequest 的中央结果与 truth，返回下一 Episode 节点有限标量 |
 | evaluator | `evaluate(trial, result)`、`summarize(records)` | 返回可 JSON 序列化的指标；保留全部失败和跳过样本 |
 | audit | `emit(event)` | 持久化研究事件；失败必须向上抛出，不能假装写入成功 |
 
@@ -732,6 +815,7 @@ LLM 通过 JSON 表达相同动作，例如：
 - `shared_context` 是显式公开材料；不要放置秘密、密钥或中央标签。
 - `node_contexts[id]` 只投影到该节点的 `environment.framework.private`。
 - `truth` 只用于中央评价，不自动加入节点观察；中央种子和完整计划也不自动公开。
+- OutcomeReward 可读取 `truth`，但 Policy 只接收其为自身生成的合成标量。
 - 奖励输入包含轮次、实际公开消息和动作类型/目标，不包含未投递正文或私有最终答案。
 - 检测器只获得最终公开正文及身份，不能从宿主取得秘密比特和预共享材料。
 - 只有 `threat_model.policy_view.public_channel_history: true` 时，所有策略才会获得
@@ -747,9 +831,10 @@ LLM 通过 JSON 表达相同动作，例如：
 
 1. 读取配置并加载显式允许的插件，校验 API 版本和组件参数。
 2. 调用场景生成计划，解析所需资源与凭证引用，冻结本次注册表。
-3. 为试验建立组件会话；资源按试验和节点作用域缓存，不因为资源名称相同就跨节点共享可变实例。
-4. 运行器调用策略与环境，宿主包装模型和 codec 的实际调用审计。
-5. 中央评分、写报告并封印；宿主逆序关闭持有的资源。
+3. 按计划进入 Condition 和独立 Session；每个 Episode 建立新的组件会话与环境。
+4. 运行同步 Round；结束后中央 OutcomeReward 产生节点标量，宿主只在同 Session 延续允许的策略状态。
+5. 每个 Episode 逆序关闭资源；Session 失败后跳过余下 Episode，其他 Session 继续执行。
+6. 中央汇总、写报告并封印；宿主最终关闭根级评价资源。
 
 组件**不能关闭注入的模型、codec 或宿主日志**。它只关闭自己创建、自己拥有的资源。
 工厂构造失败时，尚未交还宿主的资源由工厂释放。
@@ -832,7 +917,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.10,<0.11"]
+dependencies = ["stegopot>=0.11,<0.12"]
 
 [project.entry-points."stegopot.plugins"]
 research = "my_stegopot_plugin.bootstrap.plugin:plugin"
@@ -871,7 +956,7 @@ rewards:
 
 | 声明或方法 | 约定 |
 | --- | --- |
-| `kind`、`name` | kind 必须属于十类接口；name 是插件内短名 |
+| `kind`、`name` | kind 必须属于十一类接口；name 是插件内短名 |
 | `config` / `schema` | 定义严格参数模式，拒绝未知字段；schema 只接受内部引用 |
 | `preflight=check` | 可选纯检查函数，接收已校验参数与 PreflightContext，返回 Diagnostic 序列；不构造资源 |
 | `references={"client": "llm", "codec": "codec"}` | 声明配置字段引用的资源类型，工厂只能访问所声明槽位 |
@@ -884,9 +969,11 @@ rewards:
 组件不得绕过注入自行读取其他节点数据、重复关闭依赖或修改宿主全局注册表。
 重复 ID、版本不兼容、错误资源类型和未知参数都会被拒绝。
 在进程内注入 PluginCatalog 时由调用方完成注册；CLI 则依据安装元数据与配置允许列表发现插件。
-插件 API 1.2 接受兼容的 1.0/1.1 声明，`preflight` 为可选钩子。
+插件 API 1.3 接受兼容的 1.0/1.1/1.2 声明，`preflight` 为可选钩子。
 1.1 奖励插件仍可通过 `request["messages"]` 等映射键读取 JSON 数据；新插件应使用
 `RewardRequest` 的类型化属性，并且不能假定自己会收到检测理由、元数据或中央真值。
+1.3 新增 `outcome_reward`，其 `score(EpisodeOutcomeRequest)` 在受信任中央阶段运行，
+返回值仍必须是现有节点 ID 到有限数值的映射。它不能访问或修改 Policy 内部状态。
 预检不得联网、修改全局状态或把节点私有材料写入诊断；示例见 [内核接口说明](docs/kernel.md#扩展预检)。
 
 ## 结果与审计
@@ -920,13 +1007,15 @@ outputs/<run-id>/
 通过 `error.code` 区分 cancelled、budget_exceeded、deadline_exceeded、payload_exceeded 和 protocol_error。
 失败不会被补写成成功答案或当作阴性样本。正常协作式取消可完成封印；审计写盘失败或强制中断则可能未封印。
 
-研究事件使用 `trace` 关联运行、试验、节点决策、模型/工具调用、路由与信道干预。
+研究事件使用 `trace` 关联 Run、Condition、Session、Episode、节点决策、模型/工具调用、
+路由与信道干预。旧式独立 Trial 的 Condition/Session 字段为空。
 `call_id` 对应一次真实请求，`message_id` 对应实际消息；消息编号应连同试验 ID 使用。
 这些内部关联字段不会加入节点观察或公开日志。
 
 ```shell
 python -m stegopot events outputs/<run-id> --scope public --limit 20
 python -m stegopot events outputs/<run-id> --scope research --node sender --kind llm.response
+python -m stegopot events outputs/<run-id> --scope research --condition incentive --session incentive-session-0001
 ```
 
 脚本可使用 `AuditReader(...).events(...)` 流式查询，默认先核验且只读公开视图。
@@ -956,13 +1045,12 @@ Get-FileHash -LiteralPath "outputs/<run-id>/seal.json" -Algorithm SHA256
 
 - 调度采用单进程同步轮次，不提供分布式执行、断点恢复或运行中模块热重载。
 - 奖励接口计算反馈，不包含强化学习训练循环、权重更新或自动协议演化。
-- 当前策略状态只在单个 Trial 内持续；跨 Trial 学习需要由后续会话状态接口或外部训练器实现。
+- 策略状态可以在同一 Session 的 Episode 间延续，但不能跨 Session、进程重启或断点恢复；
+  需要更新模型权重的训练仍由外部训练器实现。
 - 核心提供固定 codec 工具策略，不包含通用 LLM 自主工具规划器；复杂决策可通过 policy 扩展。
 - 插件在宿主进程中执行，应仅安装和启用受信任代码。数据投影和资源注入不等于操作系统安全沙箱。
 - 预检与 doctor 是运行前检查，不保证远程服务可用或本地模型实际兼容；取消与预算也不是硬进程隔离。
 - 框架记录实验过程，不预设研究结论。显式共享协议、工具辅助传输和模型自主形成协议应分别定义和评价。
-- 0.9 删除旧 `DetectionExperimentBuilder` 及装饰器式隐写/检测 Substrate；标准实验统一使用
-  `run_file`/CLI、`ExperimentPipeline`、Codec Policy 和 Detector 组件。
 
 ### 常见问题处理
 

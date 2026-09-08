@@ -1,6 +1,6 @@
 # 威胁模型与信息边界
 
-本页对应 StegoPot 0.10.0 的 `stegopot.threat-model/1` 契约。它把实验中的
+本页对应 StegoPot 0.11.0 的 `stegopot.threat-model/1` 契约。它把实验中的
 组件可见信息、信任前提和审计范围编译成运行前固定的 `ThreatModelManifest`。
 
 ## 保证范围
@@ -50,10 +50,11 @@ threat_model:
 | 组件 | 宿主提供的信息 | 不通过宿主提供的信息 |
 | --- | --- | --- |
 | Policy | 任务、自身身份、局部拓扑、收件箱、上一动作、公共上下文、自身私有上下文和奖励 | 其他节点私有上下文、中央真值、运行 ID、完整计划和研究调用链 |
-| Substrate | 任务、节点、拓扑、公共上下文、本轮动作和已路由候选消息 | `node_contexts`、`truth` 和基础设施凭证 |
+| Substrate | 任务、节点、拓扑、公共上下文、前一 Episode 节点标量、本轮动作和已路由候选消息 | `node_contexts`、`truth` 和基础设施凭证 |
 | Channel | 已移除元数据的候选消息身份与正文 | 动作元数据、私有材料、真值和组件容器 |
 | Detector | 最终投递消息身份与正文；可选公共实验上下文 | 隐写标签、秘密比特、解码材料和中央真值 |
 | Reward | 动作类型/目标、实际投递消息与受限检测信号 | 检测理由/元数据/上下文、未投递正文、私有上下文、最终答案正文和 truth |
+| OutcomeReward | Condition/Session/Episode ID、实际运行结果和 `truth` | Policy 状态、凭证和其他 Session 内存 |
 | Evaluator | 中央 Trial、真实运行结果和 `truth` | 不进入节点交互；属于受信任中央研究阶段 |
 | Public Audit | 拓扑、实际投递消息和最小运行状态 | 提示、私有观察、调用链、真值和工具私有结果 |
 | Research Audit | 计划、组件调用、实际结果与失败 | API 密钥等基础设施凭证会被脱敏 |
@@ -69,6 +70,7 @@ threat_model:
   -> ThreatModelCompiler 编译有效清单
   -> Preflight 固定计划、插件和资源
   -> ExperimentPipeline 执行消息、检测器视图与奖励证据投影
+  -> OutcomeReward 执行中央结果反馈并只返回节点标量
   -> AuditJournal 保存双视图证据并封印
 ```
 
@@ -95,6 +97,11 @@ Channel 之前会清除动作元数据；Channel 只能修改正文或阻断，�
 发送者、接收者和轮次。Detector 只检查经过全部 Channel 后实际允许投递的文本。
 Reward 只接收最终消息和经过字段裁剪的 Detector 信号；Agent 不会得到 Detector
 对象、检测理由或其他节点奖励，只在下一轮得到自己的合成标量。
+
+连续实验中，Policy 状态只在声明的同一 Session 内按节点原样传递，不写入审计。
+每个 Episode 都重置 Substrate、收件箱和上一动作。OutcomeReward 可以读取中央
+`result + truth`，但 Agent 在下一 Episode 只得到自己的合成标量；当前 Episode
+失败后不会继续延续状态或反馈。
 
 ## 隐写语义
 

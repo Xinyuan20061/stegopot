@@ -83,6 +83,11 @@ CONFIG_SCHEMA = {
         "channels": {"type": "array", "items": COMPONENT_SCHEMA},
         "detectors": {"type": "array", "items": COMPONENT_SCHEMA},
         "rewards": {"type": "array", "items": COMPONENT_SCHEMA},
+        "outcome_rewards": {
+            "type": "array",
+            "items": COMPONENT_SCHEMA,
+            "description": "Episode 结束后读取中央结果和真值、为下一 Episode 生成节点标量反馈",
+        },
         "evaluators": {"type": "array", "items": COMPONENT_SCHEMA},
         "audit_sinks": {"type": "array", "items": COMPONENT_SCHEMA},
         "threat_model": THREAT_MODEL_SCHEMA,
@@ -146,7 +151,8 @@ def validate_config(value: Any) -> dict[str, Any]:
         "schema." + errors[0].validator, path, "实验配置未通过模式校验",
         "查看 schema 输出，检查字段类型、必填参数与允许范围")])
   defaults = {"plugins": [], "seed": 0, "resources": {}, "policies": {},
-              "channels": [], "detectors": [], "rewards": [], "evaluators": [], "audit_sinks": []}
+              "channels": [], "detectors": [], "rewards": [], "outcome_rewards": [],
+              "evaluators": [], "audit_sinks": []}
   for key, default in defaults.items():
     data.setdefault(key, default)
   data["runtime"] = {"max_model_calls": 64, "max_output_tokens": 1024,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import abc
 from collections.abc import Mapping, Sequence
 import dataclasses
+import math
 from types import MappingProxyType
 from typing import Any, TYPE_CHECKING
 
@@ -22,12 +23,14 @@ class SubstrateResetContext:
     node_ids: 按运行顺序排列的节点 ID。
     shared_context: 对全部节点可见的结构化背景信息。
     topology: 当前通信拓扑的可序列化快照。
+    initial_rewards: 上一 Episode 产生的节点标量反馈；仅在同一 Session 内传递。
   """
 
   task: str
   node_ids: Sequence[str]
   shared_context: Mapping[str, Any] = dataclasses.field(default_factory=dict)
   topology: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+  initial_rewards: Mapping[str, float] = dataclasses.field(default_factory=dict)
 
   def __post_init__(self) -> None:
     normalized_task = self.task.strip() if isinstance(self.task, str) else ""
@@ -41,6 +44,14 @@ class SubstrateResetContext:
     if any(not isinstance(node_id, str) or not node_id.strip()
            for node_id in normalized_nodes):
       raise ValueError("SubstrateResetContext.node_ids 必须是非空字符串")
+    rewards = dict(self.initial_rewards)
+    if set(rewards) - set(normalized_nodes):
+      raise ValueError("SubstrateResetContext.initial_rewards 引用未知节点")
+    if any(
+        type(value) not in (int, float) or not math.isfinite(value)
+        for value in rewards.values()
+    ):
+      raise ValueError("SubstrateResetContext.initial_rewards 必须是有限数值")
     object.__setattr__(self, "task", normalized_task)
     object.__setattr__(self, "node_ids", normalized_nodes)
     object.__setattr__(
@@ -48,6 +59,11 @@ class SubstrateResetContext:
     )
     object.__setattr__(
         self, "topology", MappingProxyType(dict(self.topology))
+    )
+    object.__setattr__(
+        self,
+        "initial_rewards",
+        MappingProxyType({key: float(value) for key, value in rewards.items()}),
     )
 
 

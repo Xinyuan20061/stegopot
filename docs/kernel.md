@@ -1,6 +1,6 @@
 # 内核控制与审计
 
-本页对应 StegoPot 0.10.0 / 插件 API 1.2。新增能力遵守四层依赖：
+本页对应 StegoPot 0.11.0 / 插件 API 1.3。新增能力遵守四层依赖：
 领域层声明数据与契约，应用层控制执行，基础设施实现诊断和日志，组装层连接配置与入口。
 
 ## 检测与奖励闭环
@@ -12,7 +12,21 @@
 
 多个 Reward 的返回值与 Substrate 奖励逐节点相加。合成结果记录在轮次结果中，
 并在下一轮通过 `environment.framework.reward` 只提供给对应节点。它是反馈通道，
-不是自动训练循环；当前 Trial 结束后策略状态不会延续到下一 Trial。
+不是自动训练循环。
+
+## Session 与 Episode
+
+标准连续实验由 `Run -> Condition -> Session -> Episode -> Round` 组成。
+`core.sessions` 将条件配置确定性展开为独立 Session 和有序 Episode。宿主在每个
+Episode 创建新的组件会话、Substrate、收件箱和上一动作；只有以下数据可以延续：
+
+- `persist_policy_state: true` 时，同一节点上一 Episode 返回的不透明 Policy 状态；
+- 上一 Episode 的逐轮累计奖励与 OutcomeReward 之和，只按节点投影为标量。
+
+OutcomeReward 接收只读 `EpisodeOutcomeRequest`，可读取实际结果和中央 truth；Policy
+不能读取该请求或真值。状态从不序列化或写入审计，也不能跨 Session。当前 Episode
+失败时，同 Session 的余下 Episode 标记为 `previous_episode_not_completed`，其他
+Session 继续运行。该机制只支持上下文内适应，不更新模型权重。
 
 ## 执行预算
 
@@ -31,7 +45,7 @@
 | max_message_bytes | 65536 | 单条正文 UTF-8 字节上限；正整数 |
 | max_context_bytes | 1000000 | 单次观察、模型输入、工具请求等 JSON 序列化后的 UTF-8 字节上限；正整数 |
 | max_rounds | 100 | 允许计划的轮数上限；1 到 10000，实际轮数仍由场景声明 |
-| max_trials | 1000 | 允许计划的试验数上限；1 到 10000 |
+| max_trials | 1000 | 允许计划的执行单元数上限；含独立 Trial 和全部 Episode |
 | max_seconds | 3600 | 执行阶段协作式截止秒数；正数，不包含预检阶段 |
 
 未声明的局部调用上限不额外生效；不要填写 null 或 0 代表无限。
@@ -217,12 +231,14 @@ private 是该节点授权材料的独立副本，不提供其他节点私有材
 ```shell
 python -m stegopot events outputs/<run-id> --scope public --limit 20
 python -m stegopot events outputs/<run-id> --scope research --trial <trial-id> --node sender
+python -m stegopot events outputs/<run-id> --scope research --condition treatment --session treatment-session-0001
 python -m stegopot events outputs/<run-id> --scope research --call <call-id>
 python -m stegopot events outputs/<run-id> --scope research --trial <trial-id> --message <message-id>
 ```
 
 默认核验报告、日志与关联封印，只查询封印报告声明的试验，不混入后来添加的无关子目录。
-CLI 支持 --round、--span、--kind、--limit；limit 默认 100，范围 1 到 10000。
+CLI 支持 --condition、--session、--episode、--round、--span、--kind、--limit；
+limit 默认 100，范围 1 到 10000。
 --expected-seal-sha256 接受独立保存的根哈希，不能和 --unverified 同时使用。
 
 ```python
@@ -234,7 +250,8 @@ for record in reader.events(scope="research", node_id="sender", kind="llm.respon
     print(event["trace"], event["data"]["call_id"])
 ```
 
-Python 参数对应 trial_id、node_id、round_index、message_id、call_id、span_id、kind。
+Python 参数对应 trial_id、condition_id、session_id、episode_id、node_id、round_index、
+message_id、call_id、span_id、kind。
 返回原始日志信封的独立字典，包含 event；不重组另一套研究事实。
 先读取根日志，再按报告顺序读取试验日志，不承诺跨文件全局时间排序。
 
@@ -242,7 +259,8 @@ Python 参数对应 trial_id、node_id、round_index、message_id、call_id、sp
 
 | 字段 | 含义 |
 | --- | --- |
-| run_id / trial_id | 实验与试验身份 |
+| run_id / trial_id | Run 与兼容执行单元身份 |
+| condition_id / session_id / episode_id | 连续实验生命周期身份；独立 Trial 时前两项为空 |
 | span_id / parent_span_id | 当前调用区段及父区段 |
 | span_name | node.decision、llm.call、codec.encode、channel.transform 等操作 |
 | node_id / round_index | 当前节点和轮次，无对应作用域时为空 |
@@ -274,8 +292,9 @@ python -m unittest discover -s tests/contracts -q
 ```
 
 上述命令仅适用于本地具备 tests/contracts 的开发环境；测试目录由 Git 忽略，公开仓库不分发测试文件。
-本地契约测试覆盖分层依赖、注册与预检、预算与取消、拓扑及重放兼容、类型失败、
-资源关闭、审计因果关联和公开隔离，使用临时工作区和替身模型/codec，拒绝网络连接。
+本地契约测试覆盖分层依赖、注册与预检、Session 状态、OutcomeReward、预算与取消、
+拓扑及重放兼容、类型失败、资源关闭、审计因果关联和公开隔离，使用临时工作区和
+替身模型/codec，拒绝网络连接。
 不验证付费 API 账户，也不替代真实 StegoKit 模型/算法的集成验收。
 
 本版本不包含断点恢复、分布式调度、硬中断、隐藏重试、自动工具规划或论文结论。

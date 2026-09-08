@@ -1,8 +1,13 @@
 """内置组件清单；算法实现保留在对应逻辑层。"""
 
 from stegopot.application.services.experiments.explicit import BasicEvaluator, ExplicitScenario
+from stegopot.application.services.experiments.sessions import SessionScenario
 from stegopot.application.services.experiments.stego import StegoEvaluator
-from stegopot.application.services.rewards import DeliveryReward, DetectionPenaltyReward
+from stegopot.application.services.rewards import (
+    DeliveryReward,
+    DetectionPenaltyReward,
+    ExactMatchOutcomeReward,
+)
 from stegopot.domain.interface.plugin import API_VERSION, ComponentDefinition, PluginDefinition
 from stegopot.infrastructure.llm.policy import LLMPolicy
 from stegopot.infrastructure.llm.prompt import PromptBuilder
@@ -88,8 +93,69 @@ def builtin_plugin() -> PluginDefinition:
           "description": "同一消息有多个检测信号时使用最大值或求和",
       },
   })
-  return PluginDefinition("core", "0.10.0", API_VERSION, (
+  session_node = _object({
+      "id": {"type": "string", "minLength": 1,
+             "description": "Session 内稳定且唯一的节点 ID"},
+      "role": {"type": "string", "minLength": 1,
+               "description": "节点在全部 Episode 中保持不变的角色说明"},
+      "policy": {**COMPONENT_SCHEMA,
+                 "description": "节点在当前 Session 使用的策略组件"},
+  }, ["id", "policy"])
+  episode = _object({
+      "id": {"type": "string", "minLength": 1,
+             "description": "当前 Condition 内唯一的 Episode 短 ID"},
+      "task": {"type": "string", "minLength": 1,
+               "description": "当前 Episode 向全部节点公开的任务文本"},
+      "shared_context": {"type": "object",
+                         "description": "当前 Episode 向全部节点公开的结构化材料"},
+      "node_contexts": {"type": "object",
+                        "description": "当前 Episode 按节点 ID 隔离的私有材料"},
+      "truth": {"type": "object",
+                "description": "只供中央评价与 outcome_reward 使用的真实标签"},
+      "max_rounds": {"type": "integer", "minimum": 1, "maximum": 10000,
+                     "description": "当前 Episode 的同步轮次上限"},
+  }, ["id", "task"])
+  condition = _object({
+      "id": {"type": "string", "minLength": 1,
+             "description": "实验条件 ID，例如 baseline 或 incentive"},
+      "session_count": {"type": "integer", "minimum": 1, "maximum": 10000,
+                        "default": 1, "description": "该条件的独立 Session 重复次数"},
+      "persist_policy_state": {"type": "boolean", "default": True,
+                               "description": "是否在同一 Session 的 Episode 间延续策略状态"},
+      "nodes": {"type": "array", "minItems": 1, "items": session_node,
+                "description": "该条件全部 Episode 共用的节点和策略"},
+      "edges": {"type": "array", "items": {
+          "type": "array", "items": text, "minItems": 2, "maxItems": 2},
+                "description": "该条件全部 Episode 共用的有向通信边"},
+      "substrate": {**COMPONENT_SCHEMA,
+                    "description": "每个 Episode 都会重置的环境组件"},
+      "episodes": {"type": "array", "minItems": 1, "items": episode,
+                   "description": "每个 Session 按顺序执行的任务样本"},
+  }, ["id", "nodes", "edges", "episodes"])
+  sessions = _object({
+      "conditions": {"type": "array", "minItems": 1, "items": condition,
+                     "description": "本次 Run 中按顺序执行的实验条件"},
+  }, ["conditions"])
+  exact_match_outcome = _object({
+      "answer_node": {"type": "string", "minLength": 1,
+                      "description": "从 final_answers 读取实际答案的节点 ID"},
+      "truth_key": {"type": "string", "minLength": 1,
+                    "description": "从 Episode.truth 读取期望字符串的字段名"},
+      "reward_nodes": {"type": "array", "minItems": 1, "uniqueItems": True,
+                       "items": {"type": "string", "minLength": 1},
+                       "description": "接收相同结果反馈的节点 ID 列表"},
+      "success_reward": {**reward_number, "default": 1.0,
+                         "description": "答案匹配时给予每个目标节点的分值"},
+      "failure_reward": {**reward_number, "default": 0.0,
+                         "description": "答案缺失或不匹配时给予每个目标节点的分值"},
+      "strip": {"type": "boolean", "default": True,
+                "description": "比较前是否移除答案与期望值两端空白"},
+      "case_sensitive": {"type": "boolean", "default": True,
+                         "description": "英文精确匹配是否区分大小写"},
+  }, ["answer_node", "truth_key", "reward_nodes"])
+  return PluginDefinition("core", "0.11.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
+      ComponentDefinition("core.sessions", "scenario", lambda config, ctx: SessionScenario(config), sessions),
       ComponentDefinition("core.metrics", "evaluator", lambda config, ctx: BasicEvaluator(), _object()),
       ComponentDefinition("core.stego_metrics", "evaluator", lambda config, ctx: StegoEvaluator(), _object()),
       ComponentDefinition("core.communication", "substrate", lambda config, ctx: CommunicationSubstrate(), _object()),
@@ -107,4 +173,6 @@ def builtin_plugin() -> PluginDefinition:
                            lambda config, ctx: DeliveryReward(**config), delivery_reward),
       ComponentDefinition("core.detection_penalty", "reward",
                            lambda config, ctx: DetectionPenaltyReward(**config), detection_penalty),
+      ComponentDefinition("core.exact_match_outcome", "outcome_reward",
+                           lambda config, ctx: ExactMatchOutcomeReward(**config), exact_match_outcome),
   ) + definitions() + llm_definitions())

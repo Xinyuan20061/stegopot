@@ -16,11 +16,15 @@ class NodeExecutionError(RuntimeError):
   """智能体节点执行失败时抛出的异常。"""
 
 
+_INITIAL_POLICY_STATE = object()
+
+
 class AgentNode:
   """把节点身份、策略和运行状态封装在一起。
 
   Policy 继续只负责“观察到动作”的决策；AgentNode 负责保存该
-  Policy 在一次多智能体运行中的状态，运行器不需要了解状态类型。
+  Policy 在当前 Session 中的状态，运行器不需要了解状态类型。独立 Trial
+  仍只包含一次运行，连续 Episode 的状态转交由应用服务控制。
   """
 
   def __init__(
@@ -50,10 +54,25 @@ class AgentNode:
     self._state: Any = None
     self._is_reset = False
 
-  def reset(self) -> None:
-    """重置节点策略状态，开始一次新的多智能体运行。"""
-    self._state = self.policy.initial_state()
+  def reset(self, state: Any = _INITIAL_POLICY_STATE) -> None:
+    """重置或恢复节点策略状态。
+
+    参数：
+      state: 省略时调用 Policy.initial_state；传入值时恢复同一节点在前一
+        Episode 返回的不透明状态。状态不做序列化，也不能跨 Session 使用。
+    """
+    self._state = (
+        self.policy.initial_state()
+        if state is _INITIAL_POLICY_STATE
+        else state
+    )
     self._is_reset = True
+
+  def export_state(self) -> Any:
+    """返回当前节点的不透明策略状态，供宿主在同一 Session 内传递。"""
+    if not self._is_reset:
+      raise RuntimeError("节点尚未初始化，不能导出策略状态")
+    return self._state
 
   def act(self, observation: Any) -> AgentAction:
     """根据当前观察执行一次决策，并保存下一状态。

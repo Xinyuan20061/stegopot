@@ -9,7 +9,12 @@ from typing import Any
 from uuid import uuid4
 
 from stegopot.application.engine.control import ExecutionBudget
-from stegopot.application.services.experiments.runner import execute_trial, run_plan
+from stegopot.application.services.experiments.execution import (
+    EpisodeExecutionContext,
+    TrialExecution,
+    execute_trial,
+)
+from stegopot.application.services.experiments.runner import run_plan
 from stegopot.bootstrap.experiments.components import ComponentSession
 from stegopot.bootstrap.experiments.prepare import PreparedExperiment
 from stegopot.bootstrap.experiments.runtime import build_runtime
@@ -97,17 +102,40 @@ def run_experiment(
       # 停止后不再构造评分资源，仍给所有计划试验留下明确的跳过记录。
       evaluators = []
 
-    def execute(trial: TrialSpec, carrier: str | None, skip: str | None) -> dict[str, Any]:
-      """执行 trial；carrier 为配对原文，skip 为上游失败等导致的跳过原因。"""
+    def execute(
+        trial: TrialSpec,
+        carrier: str | None,
+        skip: str | None,
+        lifecycle: EpisodeExecutionContext,
+    ) -> TrialExecution:
+      """执行一个计划单元并保留仅限同 Session 使用的不透明状态。
+
+      参数：
+        trial: 当前 Trial 或兼容表示的 Episode 声明。
+        carrier: 独立配对重放使用的唯一消息正文。
+        skip: 上游失败、预算停止等宿主跳过原因。
+        lifecycle: 当前 Condition、Session、Episode 身份和前序内存数据。
+
+      返回：
+        可持久化记录与只驻留内存的策略状态、标量反馈。
+      """
       child = AuditJournal(directory / trial.trial_id, run_id=trial.trial_id, redact_values=secrets)
       fanout = _Fanout(child)
-      audit = TracedAudit(fanout, run_id=run_id, trial_id=trial.trial_id)
+      audit = TracedAudit(
+          fanout,
+          run_id=run_id,
+          trial_id=trial.trial_id,
+          condition_id=lifecycle.condition_id,
+          session_id=lifecycle.session_id,
+          episode_id=lifecycle.episode_id,
+      )
       guard = control.for_trial(trial.trial_id)
       components = session(audit, guard)
       calls_before = calls.used
       try:
         with audit.span("trial.execute"):
           runtime = None
+          outcome_rewards = []
           stopped = None
           try:
             guard.checkpoint()
@@ -118,36 +146,75 @@ def run_experiment(
             if not skip:
               for value in config["audit_sinks"]:
                 # 接收器自身的工厂事件只写宿主，避免 emit 中递归通知自身。
-                sink_audit = TracedAudit(child, run_id=run_id, trial_id=trial.trial_id)
+                sink_audit = TracedAudit(
+                    child,
+                    run_id=run_id,
+                    trial_id=trial.trial_id,
+                    condition_id=lifecycle.condition_id,
+                    session_id=lifecycle.session_id,
+                    episode_id=lifecycle.episode_id,
+                )
                 sink_session = session(sink_audit, guard)
                 components.adopt(sink_session)
                 fanout.sinks.append(sink_session.create(ComponentSpec.from_dict(value), "audit"))
               runtime = build_runtime(trial, session=components, audit=audit, config=config,
                                       replay_carrier=carrier,
                                       threat_model=prepared.threat_model, control=guard)
+              outcome_rewards = [
+                  (spec.type, components.create(spec, "outcome_reward"))
+                  for spec in prepared.plan.outcome_rewards
+              ]
           except Exception as exc:
             failure = error_details(exc)
             audit.emit({"kind": "component.failed", "data": failure})
-            record = execute_trial(trial, runtime=None, audit=audit, evaluators=(),
-                                   skip_reason="component_construction_failed")
+            execution = execute_trial(
+                trial,
+                runtime=None,
+                audit=audit,
+                evaluators=(),
+                lifecycle=lifecycle,
+                skip_reason="component_construction_failed",
+            )
+            record = dict(execution.record)
             record.update(status="failed", error=failure, errors=[failure])
+            execution = TrialExecution(record=record)
           else:
-            record = execute_trial(trial, runtime=runtime, audit=audit, evaluators=evaluators,
-                                   skip_reason=skip, control=guard)
+            execution = execute_trial(
+                trial,
+                runtime=runtime,
+                audit=audit,
+                evaluators=evaluators,
+                outcome_rewards=outcome_rewards,
+                lifecycle=lifecycle,
+                skip_reason=skip,
+                control=guard,
+            )
             if stopped:
+              record = dict(execution.record)
               record.update(error=stopped, errors=[stopped])
+              execution = TrialExecution(record=record)
           try:
             components.close()
           except Exception as exc:
             failure = error_details(exc)
+            record = dict(execution.record)
             record["errors"].append(failure)
             record.update(status="failed", error=record.get("error") or failure)
+            execution = TrialExecution(record=record)
             child.emit({"kind": "component.close_failed", "data": failure})
+          record = dict(execution.record)
           record["model_calls"] = calls.used - calls_before
         child.write_artifact("result.json", record)
         child.seal(artifacts=["result.json"])
-        return {**record, "artifact_dir": trial.trial_id,
-                "seal_sha256": file_digest(child.directory / "seal.json")}
+        return TrialExecution(
+            record={
+                **record,
+                "artifact_dir": trial.trial_id,
+                "seal_sha256": file_digest(child.directory / "seal.json"),
+            },
+            policy_states=execution.policy_states,
+            feedback=execution.feedback,
+        )
       finally:
         try:
           components.close()

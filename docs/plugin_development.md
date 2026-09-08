@@ -17,6 +17,7 @@ StegoPot 核心提供多节点运行、隐写编解码、信息隔离、信道�
 | channel | transform(message) | 只改正文或返回 None 阻断，不改通信身份 |
 | detector | reset / detect / close | 只读取最终公开消息，不获得秘密与真值 |
 | reward | score(request) | 受限公开证据和检测信号到节点奖励；不直接修改策略 |
+| outcome_reward | score(request) | 中央 Episode 结果和 truth 到下一 Episode 节点标量 |
 | evaluator | evaluate(trial,result) / summarize(records) | 中央真值评分，必须保留失败和跳过样本 |
 | audit | emit(event) | 明确启用的研究审计接收器，不替代宿主强制日志 |
 
@@ -93,7 +94,7 @@ build-backend = "setuptools.build_meta"
 name = "my-stegopot-plugin"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["stegopot>=0.10,<0.11"]
+dependencies = ["stegopot>=0.11,<0.12"]
 
 [project.entry-points."stegopot.plugins"]
 example = "stegopot_example.bootstrap.plugin:plugin"
@@ -137,7 +138,9 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 工厂不能通过上下文读取未声明资源、全部环境变量或中央真实标签。
 
 宿主拥有注入资源的关闭责任。组件只关闭自己创建的对象，不关闭注入依赖。
-每次试验创建新组件；不同节点不共享可变模型/codec 实例。
+每个 Episode 创建新组件；不同节点不共享可变模型/codec 实例。Policy 的不透明状态
+可由宿主在同一 Session 传给新 Policy 实例，因此状态不得拥有需要关闭的资源，也不得
+依赖上一个 Episode 的 Substrate 或组件实例。
 工厂创建过程中失败时，尚未交还宿主的部分资源由工厂自行释放。
 
 ### 供应商凭证
@@ -154,19 +157,20 @@ StegoKit 适配器；使用已注入接口。工厂统一接收 `(config, contex
 | --- | --- |
 | schema_version | 当前为字符串 "1" |
 | plugins | 已安装扩展允许列表，可附版本范围；未启用就不可引用 |
-| scenario | 产生 TrialSpec 的组件引用，形式为 type/config |
+| scenario | 产生独立 Trial 或 Condition/Session/Episode 计划的组件引用，形式为 type/config |
 | seed | 中央计划种子，不自动写入节点观察 |
 | resources | 模型与 codec 资源字典，按声明槽位使用 |
 | policies | 按节点 ID 覆盖场景默认策略 |
 | topology.edges | 覆盖场景有向边；不存在的节点会被拒绝 |
-| channels / detectors / rewards | 按配置顺序执行的组件列表 |
+| channels / detectors / rewards | 按配置顺序执行的逐轮组件列表 |
+| outcome_rewards | Episode 结束后执行的中央结果奖励组件列表 |
 | evaluators | 添加中央评分器，结果按组件 ID 命名空间保存 |
 | audit_sinks | 添加研究事件接收器，不能移除宿主日志 |
 | threat_model | 声明策略/检测器公开视图、同进程信任前提和审计投影 |
 | runtime | 调用、输出 token、轮次、试验数和软时间上限 |
 | audit | 当前只支持 required=true、profile=research |
 
-`TrialSpec` 中 `task/shared_context` 共同可见，
+`TrialSpec`/`EpisodeSpec` 中 `task/shared_context` 共同可见，
 `node_contexts[id]` 只给对应节点，`truth` 只给中央评分。
 基础隐写策略使用节点私有字段 `secret_bits`、`cover`、`shared_material`；
 后者包括双方预先共享的 `messages`、可选 `material/max_bits`。
@@ -228,7 +232,7 @@ catalog 参数注入；此时调用者负责登记全部依赖，框架仍校验
 
 ## 1.1 预检扩展
 
-API 1.1 引入此能力；当前 API 1.2 宿主仍可加载既有 1.0/1.1 插件。
+API 1.1 引入此能力；当前 API 1.3 宿主仍可加载既有 1.0/1.1/1.2 插件。
 组件可在装饰器增加 preflight=校验函数；数据类配置与工厂保持同一类型。
 回调签名为 preflight(config, context) -> Sequence[Diagnostic]。
 
@@ -242,7 +246,7 @@ API 1.1 引入此能力；当前 API 1.2 宿主仍可加载既有 1.0/1.1 插件
 
 ## 1.2 奖励证据
 
-当前宿主默认声明插件 API 1.2，并继续接受 1.0/1.1 插件。Reward 的 `score`
+当前宿主默认声明插件 API 1.3，并继续接受 1.0/1.1/1.2 插件。Reward 的 `score`
 接收 `RewardRequest`，新插件应优先使用以下只读属性：
 
 | 属性 | 内容 | 明确不包含 |
@@ -259,3 +263,14 @@ JSON 副本。Reward 必须返回现有节点 ID 到有限数值的映射；宿�
 策略 step 的参数名称应为 observation、prev_state，宿主使用关键字调用；
 返回 (AgentAction, next_state)。内部状态仍是不透明对象，不要求 JSON 化。
 动作字段与元数据必须符合标准序列化契约，不能把不可序列化对象交给审计层。
+
+## 1.3 Episode 结果奖励
+
+`outcome_reward.score(request)` 接收 `EpisodeOutcomeRequest`。它只在受信任的中央阶段
+运行，可读取 `condition_id`、`session_id`、`episode_id`、实际 `result` 和当前
+Episode 的 `truth`。`result` 与 `truth` 属性每次访问都返回独立只读 JSON 副本。
+
+返回值必须是当前 Episode 节点 ID 到有限数值的映射。宿主把多个 OutcomeReward
+结果与逐轮累计奖励相加，只在同一 Session 的下一 Episode 首轮向对应节点投影标量。
+插件不能从该接口访问 Policy 状态，也不能返回提示、答案、检测理由或任意对象。
+结果奖励失败会使当前 Episode 失败并阻止该 Session 继续延续状态。

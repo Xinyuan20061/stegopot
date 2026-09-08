@@ -8,7 +8,12 @@ from typing import Any
 from stegopot.bootstrap.experiments.builtin import builtin_plugin
 from stegopot.bootstrap.experiments.components import PlanningContext
 from stegopot.application.services.threat_model import ThreatModelCompiler
-from stegopot.domain.model.experiment import ComponentSpec, ExperimentPlan, json_copy
+from stegopot.domain.model.experiment import (
+    ComponentSpec,
+    EpisodeSpec,
+    ExperimentPlan,
+    json_copy,
+)
 from stegopot.domain.model.diagnostic import Diagnostic, PreflightContext, PreflightError
 from stegopot.domain.model.threat import ThreatModelManifest, ThreatModelSpec
 from stegopot.infrastructure.plugins.catalog import PluginCatalog
@@ -145,11 +150,20 @@ def prepare_experiment(
       if node.policy.type == "core.llm" and not (trial.replay and node.node_id == trial.replay.sender):
         known_policy_calls += 1 if "active_round" in node.policy.config else trial.max_rounds
     trials.append(trial)
-  evaluators = tuple(plan.evaluators) + tuple(ComponentSpec.from_dict(spec) for spec in config["evaluators"])
+  evaluators = tuple(plan.evaluators) + tuple(
+      ComponentSpec.from_dict(spec) for spec in config["evaluators"]
+  )
   if len({spec.type for spec in evaluators}) != len(evaluators):
     raise ValueError("中央评分器 ID 不能重复，请在插件内提供不同命名组件")
   for spec in evaluators:
     check(spec, "evaluator")
+  outcome_rewards = tuple(plan.outcome_rewards) + tuple(
+      ComponentSpec.from_dict(spec) for spec in config["outcome_rewards"]
+  )
+  if len({spec.type for spec in outcome_rewards}) != len(outcome_rewards):
+    raise ValueError("结果奖励器 ID 不能重复，请在插件内提供不同命名组件")
+  for spec in outcome_rewards:
+    check(spec, "outcome_reward")
   for field_name, kind in (("channels", "channel"), ("detectors", "detector"),
                             ("rewards", "reward"), ("audit_sinks", "audit")):
     for value in config[field_name]:
@@ -158,7 +172,33 @@ def prepare_experiment(
     raise ValueError(f"已知 LLM 策略最多需要 {known_policy_calls} 次调用，超过 max_model_calls")
   if any(item.severity == "error" for item in diagnostics):
     raise PreflightError(diagnostics)
-  final_plan = ExperimentPlan(trials, evaluators)
+  prepared_by_id = {trial.trial_id: trial for trial in trials}
+  standalone = tuple(
+      prepared_by_id[trial.trial_id]
+      for trial in plan.standalone_trials
+  )
+  sessions = tuple(
+      replace(
+          session,
+          episodes=tuple(
+              prepared_by_id[episode.episode_id]
+              for episode in session.episodes
+          ),
+      )
+      for session in plan.sessions
+  )
+  if any(
+      not isinstance(episode, EpisodeSpec)
+      for session in sessions
+      for episode in session.episodes
+  ):
+    raise TypeError("Session 计划在预检后必须继续使用 EpisodeSpec")
+  final_plan = ExperimentPlan(
+      trials=standalone,
+      evaluators=evaluators,
+      sessions=sessions,
+      outcome_rewards=outcome_rewards,
+  )
   threat_model = ThreatModelCompiler().compile(
       final_plan,
       ThreatModelSpec.from_dict(config["threat_model"]),
