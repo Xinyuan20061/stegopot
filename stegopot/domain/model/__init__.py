@@ -1,6 +1,10 @@
 """不依赖运行器和外部工具的稳定领域对象。"""
 
 from stegopot.domain.model.action import AgentAction
+from stegopot.domain.model.attribution import CausalPathGraph
+from stegopot.domain.model.attribution import InterventionResult
+from stegopot.domain.model.attribution import InterventionSpec
+from stegopot.domain.model.attribution import PathMigrationReport
 from stegopot.domain.model.detection import DetectionFinding
 from stegopot.domain.model.detection import DetectionMetrics
 from stegopot.domain.model.detection import DetectionRequest
@@ -17,6 +21,19 @@ from stegopot.domain.model.experiment import SessionSpec
 from stegopot.domain.model.communication import CommunicationIntent
 from stegopot.domain.model.information import InformationAsset
 from stegopot.domain.model.information import InformationClass
+from stegopot.domain.model.localization import ArtifactRef
+from stegopot.domain.model.localization import DataKind
+from stegopot.domain.model.localization import LocalizationMap
+from stegopot.domain.model.localization import LocalizationMetrics
+from stegopot.domain.model.localization import LocalizationResult
+from stegopot.domain.model.localization import LocalizerDataset
+from stegopot.domain.model.localization import LocalizerSample
+from stegopot.domain.model.localization import NullTestResult
+from stegopot.domain.model.localization import ObservationAddress
+from stegopot.domain.model.localization import ObservationUnit
+from stegopot.domain.model.localization import SecretSpec
+from stegopot.domain.model.localization import SurfaceKind
+from stegopot.domain.model.localization import ResearchCapabilities
 from stegopot.domain.model.message import AgentMessage
 from stegopot.domain.model.reward import RewardAction
 from stegopot.domain.model.reward import RewardDetectionSignal
@@ -39,6 +56,7 @@ __all__ = [
     "AgentMessage",
     "AgentTopology",
     "AuditViewSpec",
+    "CausalPathGraph",
     "CommunicationIntent",
     "ComponentSpec",
     "CounterfactualSpec",
@@ -52,12 +70,28 @@ __all__ = [
     "ExperimentPlan",
     "InformationAsset",
     "InformationClass",
+    "InterventionResult",
+    "InterventionSpec",
+    "ArtifactRef",
+    "DataKind",
+    "LocalizationMap",
+    "LocalizationMetrics",
+    "LocalizationResult",
+    "LocalizerDataset",
+    "LocalizerSample",
+    "NullTestResult",
+    "ObservationAddress",
+    "ObservationUnit",
+    "SecretSpec",
+    "SurfaceKind",
     "NodeSpec",
     "PairedCarrier",
+    "PathMigrationReport",
     "PolicyViewSpec",
     "RewardAction",
     "RewardDetectionSignal",
     "RewardRequest",
+    "ResearchCapabilities",
     "ReplaySpec",
     "SessionSpec",
     "ThreatModelManifest",

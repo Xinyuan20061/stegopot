@@ -246,7 +246,7 @@ def builtin_plugin() -> PluginDefinition:
                                              "policies", "substrate"]}},
       "treatments": {"type": "array", "minItems": 1, "items": treatment},
   }, ["source", "carrier", "treatments"])
-  return PluginDefinition("core", "1.0.0", API_VERSION, (
+  return PluginDefinition("core", "1.1.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
       ComponentDefinition("core.sessions", "scenario", lambda config, ctx: SessionScenario(config), sessions),
       ComponentDefinition("core.counterfactual", "scenario",

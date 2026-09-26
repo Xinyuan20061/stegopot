@@ -169,6 +169,21 @@ Episode 结束后读取 `result + truth`，但下一 Episode 的 Policy 只能�
 `environment.framework.reward` 读取自己的合成标量。状态不写入报告或审计；
 前一 Episode 失败时，同 Session 后续 Episode 标记为跳过，其他 Session 继续运行。
 
+## 离线秘密定位与路径归因
+
+正常实验完成并封印后，可以用独立分析配置读取公开消息或外部表征工件：
+
+```powershell
+python -m stegopot analyze localize outputs/<run-id> --config analyses/secret_localization.yaml
+python -m stegopot analyze combine outputs/<token-analysis> outputs/<activation-analysis>
+python -m stegopot analyze attribute outputs/<analysis-id> --interventions interventions.json
+python -m stegopot analyze compare-paths outputs/<before> outputs/<after>
+```
+
+分析配置不属于实验 YAML，不会进入 Agent 运行期。中央秘密标签只供离线 Dataset Builder
+使用；分析前后都会核验来源运行封印。配置字段、matched-group 切分、表征采集和干预结果
+格式见 [隐写路径定位与因果归因](path_attribution.md)。
+
 ## 模型请求
 
 内置资源类型为 core.chat_completions。支持兼容的 Chat Completions 服务，

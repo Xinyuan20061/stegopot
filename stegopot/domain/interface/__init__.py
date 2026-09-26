@@ -14,6 +14,10 @@ from stegopot.domain.interface.experiment import ScenarioProvider
 from stegopot.domain.interface.llm import LLMClient
 from stegopot.domain.interface.llm import LLMMessage
 from stegopot.domain.interface.llm import LLMResponse
+from stegopot.domain.interface.intervention import InterventionRunner
+from stegopot.domain.interface.intervention import VectorOutcomeEvaluator
+from stegopot.domain.interface.localization import SecretLocalizer
+from stegopot.domain.interface.localization import SecretLocalizerFactory
 from stegopot.domain.interface.observation import ObservationBuilder
 from stegopot.domain.interface.observation import ObservationContext
 from stegopot.domain.interface.policy import Policy
@@ -40,12 +44,15 @@ __all__ = [
     "LLMClient",
     "LLMMessage",
     "LLMResponse",
+    "InterventionRunner",
     "ObservationBuilder",
     "ObservationContext",
     "OutcomeRewardFunction",
     "Policy",
     "RewardFunction",
     "ScenarioProvider",
+    "SecretLocalizer",
+    "SecretLocalizerFactory",
     "StegoDetector",
     "StegoCodec",
     "StegoEmbedRequest",
@@ -60,4 +67,5 @@ __all__ = [
     "SubstrateStepContext",
     "SubstrateStepResult",
     "ToolExecutor",
+    "VectorOutcomeEvaluator",
 ]

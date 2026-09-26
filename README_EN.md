@@ -11,7 +11,7 @@
 <p align="center"><strong>An experimental framework for multi-agent steganography, covert communication, and collusion research</strong></p>
 
 <p align="center">
-  <a href="https://github.com/Xinyuan20061/stegopot/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/release-v1.0.0-2F81F7?style=flat-square" alt="Release v1.0.0"></a>
+  <img src="https://img.shields.io/badge/version-1.1.0-2F81F7?style=flat-square" alt="Version 1.1.0">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/PyTorch-2.1%2B%20optional-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch 2.1+ optional">
   <img src="https://img.shields.io/badge/plugin%20API-1.4-4B5563?style=flat-square" alt="Plugin API 1.4">
@@ -23,6 +23,7 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#llm-nodes">LLM Nodes</a> ·
   <a href="#steganography-experiments">Steganography</a> ·
+  <a href="#steganographic-path-analysis">Path Analysis</a> ·
   <a href="#plugin-development">Plugins</a>
 </p>
 
@@ -46,6 +47,9 @@ recomputation.
 | Stateful sessions | Preserve explicitly allowed policy state across episodes in the same session |
 | Paired counterfactuals | Hold a real carrier fixed while changing channels, detectors, or rewards |
 | Standard metrics | Report BER, recovery, bits/token, detector performance, AUROC, and task utility |
+| Secret localization | Score recoverable secret information in Token/Text, Activation, KV, and Logits with permutation controls |
+| Causal path attribution | Intervene on significant candidates while retaining both localization L and causal contribution M |
+| Path migration | Compare pre/post-optimization surface contributions with protocol-checked Jensen-Shannon distance |
 | Plugin system | Register 12 component types with decorators and load them between experiments |
 | Full audit trail | Store public/research logs, execution plans, source fingerprints, and reports |
 | Evidence verification | Verify hash chains and seals, then recompute metrics from recorded evidence |
@@ -58,16 +62,11 @@ Typical uses include:
 - carrier sanitization, message blocking, and detector ablation studies;
 - joint analysis of covert-channel success, detection performance, and task utility;
 - plugin-based implementations of paper reproduction protocols and new experiments.
+- offline localization, causal attribution, and migration analysis of multi-agent secret flows.
 
 ## Installation
 
-### Install the release
-
-```powershell
-python -m pip install https://github.com/Xinyuan20061/stegopot/releases/download/v1.0.0/stegopot-1.0.0-py3-none-any.whl
-```
-
-### Install from source
+### Install the current source version
 
 ```powershell
 git clone https://github.com/Xinyuan20061/stegopot.git
@@ -75,6 +74,12 @@ cd stegopot
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
+```
+
+### Install the v1.0.0 release
+
+```powershell
+python -m pip install https://github.com/Xinyuan20061/stegopot/releases/download/v1.0.0/stegopot-1.0.0-py3-none-any.whl
 ```
 
 Install the optional StegoKit, Transformers, and PyTorch dependencies when local codec models
@@ -321,6 +326,85 @@ scenario:
 - task utility based on `truth.expected_answers`;
 - aggregated results for paired counterfactual treatments.
 
+## Steganographic Path Analysis
+
+StegoPot 1.1 separates runtime detection from the offline questions of where a secret is
+recoverable and whether a representation causally carries it:
+
+```text
+sealed run + central labels + optional representation bundle
+  -> matched-group dataset
+  -> secret probe + permutation null test
+  -> LocalizationMap
+  -> counterfactual intervention
+  -> CausalPathGraph
+  -> path migration
+```
+
+`TextSecretProbe` uses character and token n-grams. `LinearSecretProbe` covers Activation, KV,
+and Logits vectors. `StructuredSecretProbe` is available through the Python API for JSON-like
+Tool, Timing, Behavior, and Memory features. The common score is
+`L(Z)=clip(1-CE_Z/CE_0,0,1)`; each result also retains accuracy, both cross-entropies, a
+confidence interval, the permutation-null distribution, and its p-value.
+
+Analysis uses a separate file under `analyses/`; the experiment YAML schema is unchanged:
+
+```yaml
+schema_version: "stegopot.analysis/1"
+secret:
+  name: payload
+  kind: categorical
+  source: central-label-table-v1
+  classes: ["0", "1"]
+labels:
+  paired-session-0001.secret-0: "0"
+  paired-session-0001.secret-1: "1"
+matched_groups:
+  paired-session-0001.secret-0: context-0001
+  paired-session-0001.secret-1: context-0001
+surface: token
+selection: {agent_id: sender, recipient: receiver, rounds: [0], flow_order: 30}
+localizer:
+  type: text
+  config: {dimension: 1024, l2: 0.01, epochs: 250}
+split: {train_ratio: 0.6, validation_ratio: 0.2, test_ratio: 0.2, seed: 7}
+null_test: {repetitions: 100, alpha: 0.05}
+bootstrap_repetitions: 500
+minimum_samples: 24
+aggregation: {top_k: 5}
+protocol:
+  task_distribution: task-set-v1
+  secret_distribution: binary-balanced-v1
+  topology: sender-receiver-v1
+  model_family: local-model-v1
+  sampling: temperature-0-v1
+  capture: public-message-v1
+  intervention: matched-activation-v1
+  evaluator: secret-recovery-v1
+```
+
+The snippet shows the schema, not a sufficient dataset. A real analysis requires at least three
+matched groups and must satisfy `minimum_samples`. Analysis files contain central labels and
+should remain in the local workspace rather than being committed to Git.
+
+```powershell
+python -m stegopot analyze localize D:\Research\study\outputs\<run-id> `
+  --config D:\Research\study\analyses\secret_localization.yaml
+python -m stegopot analyze combine outputs/<token-analysis> outputs/<activation-analysis>
+python -m stegopot analyze attribute outputs/<analysis-id> --interventions interventions.json
+python -m stegopot analyze compare-paths outputs/<before> outputs/<after>
+```
+
+Large internal states never enter `research.jsonl`. A local model adapter uses
+`RepresentationRecorder` to create a separate binary artifact bundle linked to the source run
+seal. Unsupported or uncaptured surfaces fail explicitly instead of producing a zero score.
+
+Matched activation patching is available through the Python API. The caller must actually rerun
+the model from the patched representation; StegoPot does not treat probe predictions as causal
+evidence. Path migration is accepted only when both path graphs have the same protocol
+fingerprint. See [Steganographic Path Localization and Causal Attribution](docs/path_attribution.md)
+for the complete configuration, recording, and intervention contracts.
+
 ## Agent Tools
 
 Each node can only call aliases declared in its `tools` mapping. Tool actions use this format:
@@ -345,7 +429,7 @@ results, and failures are recorded in the research audit log.
 
 ## Built-in Components
 
-StegoPot 1.0.0 includes 20 components:
+StegoPot 1.1.0 retains 20 runtime components and adds a separate offline analysis kernel:
 
 | Type | Components |
 | --- | --- |
@@ -410,6 +494,10 @@ python -m stegopot run <config-name> --workspace <workspace>
 python -m stegopot verify <run-directory>
 python -m stegopot recompute <run-directory>
 python -m stegopot events <run-directory> --scope public --limit 100
+python -m stegopot analyze localize <run-or-run-group> --config <analysis-config>
+python -m stegopot analyze combine <localization-1> <localization-2> [...]
+python -m stegopot analyze attribute <analysis-directory> --interventions <results>
+python -m stegopot analyze compare-paths <before-analysis> <after-analysis>
 python -m stegopot plugins list
 python -m stegopot plugins inspect core
 python -m stegopot schema --component core.llm
@@ -425,6 +513,12 @@ from stegopot.bootstrap.experiments.api import (
     prepare_file,
     recompute_directory,
     run_file,
+)
+from stegopot.bootstrap.analysis import (
+    attribute_path,
+    combine_localizations,
+    compare_paths,
+    localize_runs,
 )
 
 prepared = prepare_file(
@@ -442,9 +536,15 @@ if report["status"] != "completed":
 
 verification = recompute_directory(output_directory)
 assert verification["verified"]
+
+localization, analysis_directory = localize_runs(
+    output_directory,
+    config="D:/Research/my-stegopot-study/analyses/secret_localization.yaml",
+)
 ```
 
-The CLI and Python API use the same parsing, preflight, component assembly, and audit pipeline.
+Experiment CLI/Python APIs share the runtime pipeline; analysis CLI/Python APIs share the
+separate analysis configuration and read-only sealed data source.
 
 ## Plugin Development
 
@@ -526,6 +626,24 @@ outputs/<run-id>/
     seal.json
 ```
 
+Offline localization creates a separate, non-overwriting analysis directory:
+
+```text
+outputs/<analysis-id>/
+  analysis-manifest.json
+  localization.json
+  localization.md
+  null-tests.json
+  analysis-seal.json
+  path.json               created by attribute
+  path-seal.json          created by attribute
+
+outputs/<migration-id>/
+  analysis-manifest.json
+  migration.json
+  analysis-seal.json
+```
+
 Verify a result directory with:
 
 ```powershell
@@ -553,6 +671,7 @@ or virtual machine that isolates files, networking, CPU, memory, and GPU access.
 - [Plugin development](docs/plugin_development.md)
 - [Architecture and dependency direction](docs/architecture.md)
 - [Kernel controls and auditing](docs/kernel.md)
+- [Steganographic path localization and causal attribution](docs/path_attribution.md)
 - [Threat model and information boundaries](docs/threat_model.md)
 - [Documentation index](docs/README.md)
 

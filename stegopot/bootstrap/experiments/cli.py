@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 
 from stegopot import __version__
+from stegopot.bootstrap.analysis.cli import add_analysis_parser, run_analysis_command
 from stegopot.bootstrap.experiments.api import prepare_file
 from stegopot.bootstrap.experiments.builtin import builtin_plugin
 from stegopot.bootstrap.experiments.run import run_experiment
@@ -29,6 +30,7 @@ def _parser() -> argparse.ArgumentParser:
   parser = argparse.ArgumentParser(prog="stegopot", description="多 Agent 隐写实验框架")
   parser.add_argument("--version", action="version", version=f"StegoPot {__version__}")
   commands = parser.add_subparsers(dest="command", required=True)
+  add_analysis_parser(commands)
   init = commands.add_parser("init", help="创建空实验工作区，不附带历史实验")
   init.add_argument("directory", nargs="?", default=".", help="工作区目录，默认当前目录")
   listing = commands.add_parser("list", help="列出 configs 中的实验配置，不执行")
@@ -86,7 +88,9 @@ def main(argv: Sequence[str] | None = None) -> int:
   args = _parser().parse_args(argv)
   environment = dict(os.environ)
   try:
-    if args.command == "init":
+    if args.command == "analyze":
+      payload = run_analysis_command(args)
+    elif args.command == "init":
       layout = ExperimentWorkspace(Path(args.directory))
       payload = {"workspace": str(layout.root), "configs": str(layout.initialize()),
                  "message": "请将自己的 JSON/YAML 配置放入 configs，再运行 stegopot run <名称>"}

@@ -10,7 +10,11 @@ __pycache__/
 .coverage
 htmlcov/
 artifacts/
+captures/
+representations/
 outputs/
+# 分析配置可能包含中央秘密标签，只保留在本地研究工作区。
+/analyses/**
 # 用户配置只保留在本地，仓库仅提交目录说明。
 /configs/**
 !/configs/README.md

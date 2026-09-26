@@ -1,6 +1,7 @@
 # StegoPot 开发约束
 
-修改前阅读 docs/architecture.md。项目是开放的多 Agent 隐写实验框架，不是论文实验集合。
+修改前阅读 docs/architecture.md；涉及秘密定位、表征采集或因果干预时同时阅读
+docs/path_attribution.md。项目是开放的多 Agent 隐写实验框架，不是论文实验集合。
 
 ## 仓库边界
 
@@ -8,6 +9,7 @@
 - 不重新加入旧实验、历史结果、Console、演示脚本或论文专用扩展。
 - tests/contracts 只在本地维护宿主契约回归，不提交 GitHub、不随安装包分发；不得强制添加被忽略的测试。
 - configs 只提交 README.md；用户配置和子目录由 .gitignore 排除，文档可说明格式，不默认附带可运行实验。
+- analyses、captures 和 representations 可能包含中央标签或模型内部状态，只能留在本地工作区，不得提交。
 - outputs 运行时按需创建，不能提交研究数据；.env 保留且不得提交或回显。
 - 正式第三方插件独立开发和安装，不把它们的场景或评分硬编码进内核。
 - 保留根 README、AGENTS、打包配置及许可文件；不随意移动 .venv 和 IDE 环境。
@@ -44,6 +46,10 @@
 - 检测器只读最终公开消息，不读取私有标签和密钥；节点不自动获得中央种子。
 - CLI 和文件级 API 不允许关闭宿主审计；写入失败立即中止，不伪造完整封印。
 - 记录真实请求、响应、工具调用、信道干预和失败；不得把失败当阴性样本。
+- 秘密定位是封印运行之后的离线研究分析，不得实现为实时 Detector；中央标签不得进入 Agent、Detector 或 Reward。
+- Capture 与 Localizer 分离；Activation/KV/Logits 写独立表征工件，JSON 审计只保存引用、shape、dtype 和 hash。
+- unsupported surface 必须显式失败，不能解释为 0 分；只有通过 null test 的定位单元才能进入因果候选。
+- 路径迁移比较必须验证协议指纹一致；分析结果只能引用来源运行，不能覆盖原始实验输出。
 - 配对重放与真实生成、工具结果与模型决策必须区分；研究数据不得直接公开。
 - 模型适配器不得自动重试或绕过宿主预算；不从配置文本直接读取 API 密钥。
 - ExecutionGuard 由应用层实现，模型、codec 和运行器只依赖领域契约；停止后仍须释放资源。

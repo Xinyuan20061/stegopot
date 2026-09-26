@@ -11,7 +11,7 @@
 <p align="center"><strong>多智能体隐写、隐蔽通信与共谋研究实验框架</strong></p>
 
 <p align="center">
-  <a href="https://github.com/Xinyuan20061/stegopot/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/release-v1.0.0-2F81F7?style=flat-square" alt="Release v1.0.0"></a>
+  <img src="https://img.shields.io/badge/version-1.1.0-2F81F7?style=flat-square" alt="Version 1.1.0">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/PyTorch-2.1%2B%20optional-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch 2.1+ optional">
   <img src="https://img.shields.io/badge/plugin%20API-1.4-4B5563?style=flat-square" alt="Plugin API 1.4">
@@ -23,6 +23,7 @@
   <a href="#快速开始">快速开始</a> ·
   <a href="#llm-节点">LLM 节点</a> ·
   <a href="#隐写实验">隐写实验</a> ·
+  <a href="#隐写路径分析">路径分析</a> ·
   <a href="#插件扩展">插件扩展</a>
 </p>
 
@@ -45,6 +46,9 @@ StegoPot 使用 YAML/JSON 描述实验。用户可以配置 Agent 节点、有�
 | 连续 Session | 在同一 Session 的 Episode 之间保留允许延续的策略状态 |
 | 配对反事实 | 固定同一条真实载体，仅改变信道、检测器或奖励条件 |
 | 标准指标 | 输出 BER、恢复率、bits/token、检测性能、AUROC 和任务效用 |
+| 秘密定位 | 对 Token/Text、Activation、KV、Logits 计算统一可恢复分数和随机标签对照 |
+| 因果路径归因 | 对显著候选执行反事实干预，同时保存定位分数 L 与因果贡献 M |
+| 路径迁移 | 在协议一致时比较优化前后的表面贡献分布和 Jensen-Shannon 距离 |
 | 插件系统 | 通过装饰器注册 12 类组件，在两次实验之间热插拔 |
 | 全过程审计 | 保存公开/研究双日志、运行计划、源码指纹和实验报告 |
 | 证据验证 | 校验日志哈希链和结果封印，并从原始结果离线复算指标 |
@@ -57,16 +61,11 @@ StegoPot 使用 YAML/JSON 描述实验。用户可以配置 Agent 节点、有�
 - 载体净化、消息阻断和检测器消融实验；
 - 隐写成功率、检测性能与任务效用的联合评估；
 - 论文复现协议和新实验组件的插件化实现。
+- 多智能体秘密信息流的离线定位、因果归因与路径迁移研究。
 
 ## 安装
 
-### 从发行版安装
-
-```powershell
-python -m pip install https://github.com/Xinyuan20061/stegopot/releases/download/v1.0.0/stegopot-1.0.0-py3-none-any.whl
-```
-
-### 从源码安装
+### 从源码安装当前版本
 
 ```powershell
 git clone https://github.com/Xinyuan20061/stegopot.git
@@ -74,6 +73,12 @@ cd stegopot
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
+```
+
+### 安装 v1.0.0 发行版
+
+```powershell
+python -m pip install https://github.com/Xinyuan20061/stegopot/releases/download/v1.0.0/stegopot-1.0.0-py3-none-any.whl
 ```
 
 需要 StegoKit、本地 Transformers 模型和 PyTorch 时安装可选依赖：
@@ -314,6 +319,93 @@ scenario:
 - `truth.expected_answers` 对应的任务效用；
 - 配对反事实各处理组的聚合结果。
 
+## 隐写路径分析
+
+StegoPot 1.1 将“是否可疑”的实时检测与“秘密在哪里、是否因果参与传播”的离线分析分开：
+
+```text
+封印实验 + 中央秘密标签 + 可选表征工件
+  -> matched-group 数据集
+  -> Secret Probe + permutation null test
+  -> LocalizationMap
+  -> 反事实干预
+  -> CausalPathGraph
+  -> Path Migration
+```
+
+内置 `TextSecretProbe` 使用字符/词 n-gram，`LinearSecretProbe` 用于 Activation、KV 和
+Logits 向量，`StructuredSecretProbe` 供 Python 侧处理 Tool、Timing、Behavior 等 JSON
+特征。统一定位分数为 `L(Z)=clip(1-CE_Z/CE_0,0,1)`；报告同时保留 accuracy、CE、
+先验 CE、置信区间、null 均值/标准差和 permutation p-value。
+
+分析配置独立放在工作区 `analyses/`，不修改实验 YAML：
+
+```yaml
+schema_version: "stegopot.analysis/1"
+secret:
+  name: payload
+  kind: categorical
+  source: central-label-table-v1
+  classes: ["0", "1"]
+labels:
+  paired-session-0001.secret-0: "0"
+  paired-session-0001.secret-1: "1"
+matched_groups:
+  paired-session-0001.secret-0: context-0001
+  paired-session-0001.secret-1: context-0001
+surface: token
+selection:
+  agent_id: sender
+  recipient: receiver
+  rounds: [0]
+  flow_order: 30
+localizer:
+  type: text
+  config: {dimension: 1024, l2: 0.01, epochs: 250}
+split: {train_ratio: 0.6, validation_ratio: 0.2, test_ratio: 0.2, seed: 7}
+null_test: {repetitions: 100, alpha: 0.05}
+bootstrap_repetitions: 500
+minimum_samples: 24
+aggregation: {top_k: 5}
+protocol:
+  task_distribution: task-set-v1
+  secret_distribution: binary-balanced-v1
+  topology: sender-receiver-v1
+  model_family: local-model-v1
+  sampling: temperature-0-v1
+  capture: public-message-v1
+  intervention: matched-activation-v1
+  evaluator: secret-recovery-v1
+```
+
+上例只展示字段格式。正式分析至少需要 3 个 matched group 并满足 `minimum_samples`；
+分析配置含中央标签，应保留在本地工作区且不要提交到 Git。
+
+运行公开文本定位：
+
+```powershell
+python -m stegopot analyze localize D:\Research\study\outputs\<run-id> `
+  --config D:\Research\study\analyses\secret_localization.yaml
+```
+
+内部表征不进入 `research.jsonl`。本地模型适配器通过
+`RepresentationRecorder` 写独立二进制工件、索引和哈希封印，再在配置中声明
+`representation_bundles`，使用 `surface: activation|kv|logits` 和 `localizer.type: vector`。
+未采集或不支持的表面会显式失败，不会被记为 0 分。
+
+因果归因只接受真实重跑结果。`MatchedActivationPatcher` 用上下文匹配、秘密不同的供体
+激活替换源激活；调用方负责把替换值送回模型。统一因果分数为
+`M(Z)=clip((R0-Ri)/(R0-Rchance),0,1)`，并保留三个原始恢复率。
+
+```powershell
+python -m stegopot analyze combine outputs/<token-analysis> outputs/<activation-analysis>
+python -m stegopot analyze attribute outputs/<analysis-id> --interventions interventions.json
+python -m stegopot analyze compare-paths outputs/<before> outputs/<after>
+```
+
+路径迁移比较要求两侧协议指纹完全一致。详细配置、表征记录和干预文件格式见
+[隐写路径定位与因果归因](docs/path_attribution.md)。
+
 ## 节点工具
 
 节点只允许调用自身 `tools` 映射中声明的工具别名。工具动作格式如下：
@@ -337,7 +429,7 @@ scenario:
 
 ## 内置组件
 
-StegoPot 1.0.0 提供 20 个内置组件：
+StegoPot 1.1.0 保留 20 个运行期内置组件，并新增独立离线分析内核：
 
 | 类型 | 组件 |
 | --- | --- |
@@ -401,6 +493,10 @@ python -m stegopot run <配置名> --workspace <工作区>
 python -m stegopot verify <运行目录>
 python -m stegopot recompute <运行目录>
 python -m stegopot events <运行目录> --scope public --limit 100
+python -m stegopot analyze localize <运行目录或运行组> --config <分析配置>
+python -m stegopot analyze combine <定位分析1> <定位分析2> [...]
+python -m stegopot analyze attribute <分析目录> --interventions <干预结果>
+python -m stegopot analyze compare-paths <迁移前分析> <迁移后分析>
 python -m stegopot plugins list
 python -m stegopot plugins inspect core
 python -m stegopot schema --component core.llm
@@ -416,6 +512,12 @@ from stegopot.bootstrap.experiments.api import (
     prepare_file,
     recompute_directory,
     run_file,
+)
+from stegopot.bootstrap.analysis import (
+    attribute_path,
+    combine_localizations,
+    compare_paths,
+    localize_runs,
 )
 
 prepared = prepare_file(
@@ -433,9 +535,14 @@ if report["status"] != "completed":
 
 verification = recompute_directory(output_directory)
 assert verification["verified"]
+
+localization, analysis_directory = localize_runs(
+    output_directory,
+    config="D:/Research/my-stegopot-study/analyses/secret_localization.yaml",
+)
 ```
 
-CLI 和 Python API 使用相同的配置解析、预检、组件组装和审计流程。
+实验 CLI/Python API 共用运行链路；分析 CLI/Python API 共用独立分析配置和只读封印数据源。
 
 ## 插件扩展
 
@@ -517,6 +624,24 @@ outputs/<run-id>/
     seal.json
 ```
 
+离线定位另行创建不可覆盖的分析目录，不向原运行追加文件：
+
+```text
+outputs/<analysis-id>/
+  analysis-manifest.json
+  localization.json
+  localization.md
+  null-tests.json
+  analysis-seal.json
+  path.json               执行 attribute 后生成
+  path-seal.json          执行 attribute 后生成
+
+outputs/<migration-id>/
+  analysis-manifest.json
+  migration.json
+  analysis-seal.json
+```
+
 验证结果目录：
 
 ```powershell
@@ -541,6 +666,7 @@ StegoPot 的插件运行在同一 Python 进程中。节点可见信息、工具
 - [插件开发](docs/plugin_development.md)
 - [架构与依赖方向](docs/architecture.md)
 - [内核控制与审计](docs/kernel.md)
+- [隐写路径定位与因果归因](docs/path_attribution.md)
 - [威胁模型与信息边界](docs/threat_model.md)
 - [文档索引](docs/README.md)
 

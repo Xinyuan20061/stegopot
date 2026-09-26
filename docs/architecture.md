@@ -21,9 +21,11 @@ stegopot/
   application/
     engine/                     节点状态、轮次调度、路由、信息投影和分层预算
     services/                   威胁模型编译与通用奖励实现
+      analysis/                数据集切分、统一评分、聚合、归因与路径迁移
       experiments/             通用 Trial/Session 场景、生命周期执行与结果汇总
       rewards/                 逐轮公开证据奖励与中央 Episode 结果奖励
   infrastructure/
+    analysis/                   内置秘密探针、特征提取、封印数据源和干预实现
     settings/                   工作区发现、配置校验、独立环境快照
     plugins/                    已安装 entry point 发现与模式校验
     llm/                        策略、提示解析、请求与工具审计
@@ -33,7 +35,9 @@ stegopot/
     substrates/                通信环境和公开信道实现
     detectors/                 基础公开载体检测
     recorders/audit/            双日志、调用关联、只读查询、脱敏、封印和报告
+    recorders/representations.py 独立大向量工件、索引和来源封印绑定
   bootstrap/
+    analysis/                   独立分析配置、文件级 API 和 analyze CLI
     experiments/               文件级 API、CLI、预检、组装和资源生命周期
 ```
 
@@ -80,6 +84,23 @@ CLI / prepare_file / run_file
  -> TracedAudit -> AuditJournal：调用链、研究/公开日志和关联封印
  -> AuditReader：默认核验后查询，只读取封印报告声明的试验
 ```
+
+实验完成后可启动独立研究链路：
+
+```text
+Sealed Experiment Output + Central Labels + Representation Bundle
+ -> Matched Dataset Builder（按 group 切分并审计泄漏）
+ -> Text / Linear / Structured Secret Probe
+ -> Unified Scorer + Permutation Null Test
+ -> LocalizationMap + Top-K Surface Summary
+ -> Counterfactual Intervention
+ -> CausalPathGraph
+ -> Protocol-matched Path Migration
+```
+
+该链路不改变正常实验调用顺序。中央标签只进入离线分析数据集，不会回流到 Agent
+observation、Detector、Reward 或公开审计。完整协议见
+[隐写路径定位与因果归因](path_attribution.md)。
 
 工作区发现不解析配置，预检不创建模型；第三方场景必须自行遵守纯计划约束。
 文件级入口不切换进程工作目录、不修改 os.environ，输出默认属于指定工作区。
