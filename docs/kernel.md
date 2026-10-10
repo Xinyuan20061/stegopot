@@ -1,302 +1,157 @@
-# 内核控制与审计
+# 运行时内核
 
-本页对应 StegoPot 1.0.0 / 插件 API 1.4。新增能力遵守四层依赖：
-领域层声明数据与契约，应用层控制执行，基础设施实现诊断和日志，组装层连接配置与入口。
+## Capability
 
-## 检测与奖励闭环
+模型适配器显式声明实际能力：
 
-每轮执行顺序固定为：基础环境处理、公开信道变换、最终文本检测、奖励计算、
-运行器投递。Reward 收到不可变 `RewardRequest`，其中 Detection 只保留组件 ID、
-消息 ID、二分类判定、分数和置信度。检测理由、metadata、请求 context 和中央 truth
-不会进入 Reward；完整检测结果和实际 RewardRequest 仅写入研究审计。
-
-多个 Reward 的返回值与 Substrate 奖励逐节点相加。合成结果记录在轮次结果中，
-并在下一轮通过 `environment.framework.reward` 只提供给对应节点。它是反馈通道，
-不是自动训练循环。
-
-## Session 与 Episode
-
-标准连续实验由 `Run -> Condition -> Session -> Episode -> Round` 组成。
-`core.sessions` 将条件配置确定性展开为独立 Session 和有序 Episode。宿主在每个
-Episode 创建新的组件会话、Substrate、收件箱和上一动作；只有以下数据可以延续：
-
-- `persist_policy_state: true` 时，同一节点上一 Episode 返回的不透明 Policy 状态；
-- 上一 Episode 的逐轮累计奖励与 OutcomeReward 之和，只按节点投影为标量。
-
-OutcomeReward 接收只读 `EpisodeOutcomeRequest`，可读取实际结果和中央 truth；Policy
-不能读取该请求或真值。状态从不序列化或写入审计，也不能跨 Session。当前 Episode
-失败时，同 Session 的余下 Episode 标记为 `previous_episode_not_completed`，其他
-Session 继续运行。该机制只支持上下文内适应，不更新模型权重。
-
-## 执行预算
-
-在用户完整实验配置的 runtime 中设置以下参数：
-
-| 参数 | 默认值 | 含义 |
-| --- | --- | --- |
-| max_model_calls | 64 | 整组模型调用上限；1 到 100000 |
-| max_model_calls_per_trial | 不额外限制 | 单次试验模型调用上限；正整数 |
-| max_model_calls_per_node | 不额外限制 | 单次试验中每节点模型调用上限；正整数 |
-| max_tool_calls | 256 | 整组 codec 编解码与通用 Tool 调用总上限；正整数 |
-| max_tool_calls_per_trial | 不额外限制 | 单次试验工具调用上限；正整数 |
-| max_tool_calls_per_node | 不额外限制 | 单次试验中每节点工具调用上限；正整数 |
-| max_output_tokens | 1024 | 每次宿主模型请求的输出 token 上限；1 到 65536 |
-| max_total_tokens | 1000000 | 累计服务端已报告 total_tokens 上限；正整数 |
-| max_message_bytes | 65536 | 单条正文 UTF-8 字节上限；正整数 |
-| max_context_bytes | 1000000 | 单次观察、模型输入、工具请求等 JSON 序列化后的 UTF-8 字节上限；正整数 |
-| max_rounds | 100 | 允许计划的轮数上限；1 到 10000，实际轮数仍由场景声明 |
-| max_trials | 1000 | 允许计划的执行单元数上限；含独立 Trial 和全部 Episode |
-| max_seconds | 3600 | 执行阶段协作式截止秒数；正数，不包含预检阶段 |
-
-未声明的局部调用上限不额外生效；不要填写 null 或 0 代表无限。
-较大的上限不代表本机具有相应资源，仍须匹配模型和硬件。
-
-- 通过宿主注入模型的 generate，或 codec 的 encode/decode，在调用前原子预占一次额度。调用失败仍占用已预留次数。
-- codec 和通用 Tool 共用工具预算；节点只能调用 NodeSpec.tools 明确授权的别名，结果在下一轮只返回调用节点。
-- 工具内部本地计算不额外算远程模型请求；插件不得绕过宿主自行创建未审计客户端。
-- 局部额度耗尽只使当前试验失败；全局耗尽阻止后续试验。中央 evaluator 只使用全局调用预算。
-- 恰好达到 token 上限时拒绝下一次模型请求；单次响应导致超额时，保留真实响应后在下一检查点停止。
-- total_tokens 缺失或不可用增加 calls_without_token_usage，不宣称为真实零消耗，不估算未返回费用。
-- 消息在路由和信道处理前后检查大小；超限失败，不截断载体或悄悄改变隐写内容。
-- max_context_bytes 是宿主 JSON 载荷限制，不等同于供应商 token 窗口，也不是进程内存上限。
-
-预算依赖可信插件遵守注入和一次调用契约。插件不得自行创建未审计客户端、隐藏重试或绕过宿主联网。
-框架不是操作系统级沙箱，不能对恶意插件提供硬费用或资源保证。
-
-## 协作式取消
-
-Python 嵌入调用不修改进程信号处理器：
-
-```python
-from threading import Timer
-
-from stegopot.bootstrap.experiments.api import run_file
-from stegopot.domain.model.execution import CancellationToken
-
-token = CancellationToken()
-timer = Timer(30, token.cancel)  # 30 秒后请求取消，不强制终止模型计算。
-timer.start()
-try:
-    report, directory = run_file(
-        "communication",
-        workspace="D:/Research/my-workspace",
-        cancellation=token,
-    )
-finally:
-    timer.cancel()
-print(report["status"], report["execution"], directory)
-```
-
-cancel() 可重复调用，也可从其他线程调用；cancelled 属性读取当前状态。
-已取消令牌不用于新实验，每次新运行应创建新令牌。
-
-节点、轮次、模型/工具、环境处理、组件构造和中央评价等边界设置检查点。
-若取消发生在请求内部，框架等待该调用返回或由客户端超时退出，
-先记录实际得到的响应，再停止后续执行。长时间阻塞的任意插件不会被强制杀死。
-
-CLI 首次 Ctrl+C 请求取消，尽量完成资源关闭和失败/跳过报告封印；
-再次 Ctrl+C 抛出 KeyboardInterrupt，可能留下未封印目录。
-杀进程、断电或审计介质故障也无法保证完整报告。
-
-### 报告兼容性
-
-继续使用 stegopot.report/1，不改变原有状态枚举：
-
-| 情况 | 记录 |
+| capability | 含义 |
 | --- | --- |
-| 正常完成 | trial.status 为 completed |
-| 执行中取消、超时、额度或载荷超限 | 当前试验通常为 failed，error.code 说明原因 |
-| 全局停止后的未开始试验 | skipped，不调用其模型或评价器 |
-| 局部额度耗尽 | 当前试验 failed，其他独立试验仍可执行 |
-| 开始前已取消 | 计划中试验均 skipped，整组 partial |
-| 仅汇总被全局停止 | 正常试验保持 completed，整组 partial |
-| 协议输出非法 | protocol_error，不生成替代动作或虚构响应 |
+| `forward` | 执行模型前向 |
+| `generation` | 生成文本或 token |
+| `token_step_control` | 在 token 提交前暂停、检查和重算 |
+| `activation_read` | 读取指定内部张量 |
+| `activation_write` | 在真实前向中修改内部张量 |
+| `gradient_read` | backward 后读取选定激活的梯度 |
+| `agent_message_hook` | 控制 Agent 消息生命周期 |
 
-试验 error 保留首个错误，errors 保存后续错误，避免评价失败覆盖原始运行失败。
-整组有失败试验即为 failed；无失败但有跳过或全局停止导致汇总未完成时为 partial。
-execution.stop_reason 仅表示全局停止原因，局部超限须看试验错误。
+插件通过 `requires_capabilities` 声明要求，`model_adapter` 通过
+`provides_capabilities` 声明提供项。配置预检会在模型加载前拒绝不匹配组合。
 
-稳定分类包括 cancelled、deadline_exceeded、budget_exceeded、payload_exceeded、
-protocol_error 和普通组件的 component_error。
-受控停止另带 resource，例如 max_tool_calls_per_node，指出触发的限制。
+## TensorRef
 
-## 预检与离线诊断
-
-```shell
-python -m stegopot validate communication
-python -m stegopot doctor communication
-```
-
-两者不构造模型、不发送付费请求。场景生成和插件钩子是可信代码，
-必须遵守无副作用约定，框架没有在操作系统层禁止任意第三方代码联网。
-
-validate 在参数模式、资源引用和计划校验基础上调用纯预检钩子。
-内置策略检查活动轮次、发送目标、出邻居、必要私有比特和预共享材料。
-最后一轮消息无法在本试验下一轮读取时给出警告，不一律拒绝。
-重放覆盖的发送节点不再要求执行原策略所需的模型或秘密材料。
-
-doctor 额外检查已知 StegoKit 资源的安装元数据、供应商源码、本地模型目录、
-config.json、常见 tokenizer 文件、权重文件或分片索引。
-不下载权重、不导入重型推理包、不验证远程账户，不证明架构、算法和 tokenizer 实际兼容。
-ready 仅表示已实施的检查没有 error；network_checked 固定为 false。
+`TensorRef` 支持两种地址：
 
 ```python
-from stegopot.bootstrap.experiments.api import diagnose_file
-from stegopot.domain.model.diagnostic import PreflightError
-
-try:
-    diagnostics = diagnose_file("communication", workspace="D:/Research/my-workspace")
-except PreflightError as error:
-    diagnostics = error.diagnostics
-for item in diagnostics:
-    print(item.to_dict())
+TensorRef(module="model.layers.8.mlp", token=-1)
+TensorRef(layer=8, component="resid_post", token=-1)
 ```
 
-Diagnostic 包含 code、path、message、hint、severity 和可选 component。
-error 阻止预检，warning 提示风险，info 说明检查范围。
-模式和钩子错误可读取 PreflightError.diagnostics；文件、解析和部分基础计划错误
-仍可能是原有异常类型，不应假设所有入口异常都是 PreflightError。
-diagnose_file 将环境不就绪作为 error 级诊断返回，调用者应检查 severity。
+通用 Hugging Face 适配器识别常见层容器，以及 `resid_pre`、`resid_post`、
+`attention_output` 和 `mlp_output`。未知架构使用精确 `module` 路径。
+`head` 只有后端能够证明布局时才支持；通用适配器不会猜测。
 
-## 扩展预检
-
-API 1.1 新增可选 preflight 声明，未声明的 API 1.0 插件继续工作。
-数据类注册时，工厂和预检收到同一种已验证参数对象：
+## TracePolicy
 
 ```python
-from dataclasses import dataclass, field
+from stegopot import TensorRef, TracePolicy
 
-from stegopot.domain.interface.plugin import BuildContext
-from stegopot.domain.interface.registration import Plugin
-from stegopot.domain.model.action import AgentAction
-from stegopot.domain.model.diagnostic import Diagnostic, PreflightContext
-
-plugin = Plugin("checked", "0.1.0")
-
-@dataclass(frozen=True)
-class SendConfig:
-    target: str = field(metadata={"description": "接收节点 ID，必须是当前节点的出邻居"})
-    content: str = field(metadata={"description": "首次发送的公开正文，不包含秘密材料"})
-
-def check_send(config: SendConfig, context: PreflightContext) -> list[Diagnostic]:
-    """config 为已验证参数；context 只含当前节点的拓扑和授权材料。"""
-    if config.target not in context.outgoing:
-        return [Diagnostic(
-            code="checked.target",
-            path=context.path + ".target",
-            message="接收者不是当前节点的出邻居",
-            hint="调整发送目标或显式添加有向边",
-        )]
-    return []
-
-class SendOnce:
-    """一次发送策略；只有节点局部状态，不拥有外部资源。"""
-
-    def __init__(self, config: SendConfig) -> None:
-        """config 保存预检通过的目标和正文。"""
-        self._config = config
-
-    def initial_state(self):
-        """返回是否已发送的初始状态。"""
-        return False
-
-    def step(self, observation, prev_state):
-        """observation 为局部观察；prev_state 为发送标记；返回动作和新状态。"""
-        if prev_state:
-            return AgentAction(kind="wait", content=""), prev_state
-        return AgentAction(
-            kind="message", target=self._config.target, content=self._config.content,
-        ), True
-
-    def close(self) -> None:
-        """无资源需要释放。"""
-
-@plugin.component("policy", "send_once", config=SendConfig, preflight=check_send)
-def build_send(config: SendConfig, context: BuildContext) -> SendOnce:
-    """config 为预检参数；context 为构造上下文，本组件无需资源。"""
-    return SendOnce(config)
+policy = TracePolicy(
+    refs=(TensorRef(layer=8, component="resid_post", token=-1),),
+    store="cpu",
+    detach=True,
+    precision="float32",
+    max_records=32,
+    max_bytes=64 * 1024 * 1024,
+)
 ```
 
-PreflightContext.path 定位组件；node_id、max_rounds、outgoing、incoming 表示当前节点和试验。
-无对应作用域时节点/轮次为 None，邻居为空。
-private 是该节点授权材料的独立副本，不提供其他节点私有材料、中央真值、全局凭证或完整计划。
+- `profile="none"` 不安装采集 Hook。
+- `selected` 只采集 `refs`。
+- `full` 采集叶子模块，仍受记录数和字节上限约束。
+- `store` 可选 `memory`、`cpu` 或 `disk`。
+- 保留计算图或梯度时必须使用 `store="memory", detach=False`。
+- 磁盘模式要求构造适配器时注入 `TraceStore`。
 
-策略 step 必须接受 observation 和 prev_state 这两个关键字参数；宿主不是按自定义参数名传递。
+`ActivationTrace` 按 TensorRef 与生成步骤索引记录。JSON manifest 只保存 shape、dtype、
+设备、摘要引用和梯度是否就绪，不保存张量原值。
 
-钩子只检查，不构造、不联网、不写文件、不修改全局状态，也不得把秘密拼进诊断文本。
-显式 schema 注册的钩子接收参数映射；直接使用 ComponentDefinition 时同样接收映射。
-纯钩子不能代替工厂和运行时的类型、资源与行为检查。
-
-## 审计查询
-
-```shell
-python -m stegopot events outputs/<run-id> --scope public --limit 20
-python -m stegopot events outputs/<run-id> --scope research --trial <trial-id> --node sender
-python -m stegopot events outputs/<run-id> --scope research --condition treatment --session treatment-session-0001
-python -m stegopot events outputs/<run-id> --scope research --call <call-id>
-python -m stegopot events outputs/<run-id> --scope research --trial <trial-id> --message <message-id>
-```
-
-默认核验报告、日志与关联封印，只查询封印报告声明的试验，不混入后来添加的无关子目录。
-CLI 支持 --condition、--session、--episode、--round、--span、--kind、--limit；
-limit 默认 100，范围 1 到 10000。
---expected-seal-sha256 接受独立保存的根哈希，不能和 --unverified 同时使用。
+## 可控 Forward
 
 ```python
-from stegopot.infrastructure.recorders.audit.reader import AuditReader
+from stegopot import ModelInput, ModelRuntime
+from stegopot.infrastructure.model_adapters import HuggingFaceAdapter
 
-reader = AuditReader("D:/Research/my-workspace/outputs/your-run-id")
-for record in reader.events(scope="research", node_id="sender", kind="llm.response"):
-    event = record["event"]
-    print(event["trace"], event["data"]["call_id"])
+adapter = HuggingFaceAdapter(
+    model_path="D:/Models/Qwen",
+    revision="固定修订",
+    local_files_only=True,
+)
+runtime = ModelRuntime(adapter)
+result = runtime.forward(ModelInput("prompt"), policy=policy)
+activation = result.trace.get(policy.refs[0]).value
 ```
 
-Python 参数对应 trial_id、condition_id、session_id、episode_id、node_id、round_index、
-message_id、call_id、span_id、kind。
-返回原始日志信封的独立字典，包含 event；不重组另一套研究事实。
-先读取根日志，再按报告顺序读取试验日志，不承诺跨文件全局时间排序。
+梯度由调用方定义目标函数：
 
-研究日志 trace 使用 stegopot.trace/1：
-
-| 字段 | 含义 |
-| --- | --- |
-| run_id / trial_id | Run 与兼容执行单元身份 |
-| condition_id / session_id / episode_id | 连续实验生命周期身份；独立 Trial 时前两项为空 |
-| span_id / parent_span_id | 当前调用区段及父区段 |
-| span_name | node.decision、llm.call、codec.encode、channel.transform 等操作 |
-| node_id / round_index | 当前节点和轮次，无对应作用域时为空 |
-| message_id | 当前处理的实际消息，无消息作用域时为空 |
-
-data.call_id 连接一次实际请求、响应和失败。
-观察事件的 input_message_ids 表明决策读到的消息，消息查询也匹配该字段。
-路由和信道事件通过消息 ID、父 span 追溯决策和干预。
-span 筛选仅精确匹配当前 span_id，不自动递归所有后代。
-message_id 不是跨试验全局 ID，建议同时指定 trial_id。
-
-公开视图继续遵守白名单，不增加内部 trace、调用内容或私有观察。
-public 下按 call/span 筛选通常无结果，不可为方便查询拼接 research。
-research 可能包含秘密、提示和预共享材料，仅供授权研究人员使用。
-
-中断目录可显式使用 AuditReader(..., verify=False) 或 --unverified 调查。
-这不构成完整性验证；损坏 JSON 行仍报错，不自动修复或伪造。
-verified 仅说明初始化时的核验，不锁定文件，也不能防止之后被其他进程修改。
-
-## 环境记录与测试
-
-manifest 保存预检提示及 Python、平台、已安装分发包版本，并引用封印中的
-threat-model.json。威胁模型工件记录有效组件视图、信任假设、计划摘要和拓扑摘要，
-不复制进程环境变量、密钥或安装路径。
-它不是完整模型权重哈希与随机状态快照，不保证远程采样或跨硬件逐位确定性。
-
-```shell
-python -m unittest discover -s tests/contracts -q
+```python
+gradient_policy = TracePolicy(
+    refs=policy.refs,
+    store="memory",
+    detach=False,
+    retain_graph=True,
+    retain_gradients=True,
+)
+result = runtime.forward(ModelInput("prompt"), policy=gradient_policy)
+metric = result.output.logits[0, -1, target_token]
+metric.backward()
+gradient = result.trace.get(policy.refs[0]).gradient
 ```
 
-上述命令仅适用于本地具备 tests/contracts 的开发环境；测试目录由 Git 忽略，公开仓库不分发测试文件。
-本地契约测试覆盖分层依赖、注册与预检、Session 状态、OutcomeReward、预算与取消、
-拓扑及重放兼容、类型失败、资源关闭、审计因果关联和公开隔离，使用临时工作区和
-替身模型/codec，拒绝网络连接。
-不验证付费 API 账户，也不替代真实 StegoKit 模型/算法的集成验收。
+StegoPot 不定义 metric、EAP 或 attribution 公式。
 
-本版本不包含断点恢复、分布式调度、硬中断、隐藏重试、自动工具规划或论文结论。
-后续扩展仍通过 domain/interface 注册和调用，不得绕开审计和所有权约定。
+## 干预
+
+核心提供 Replace、Zero、Scale、Add 和 Interpolate 五个无实验语义的算子：
+
+```python
+from stegopot import Intervention
+from stegopot.application.services.runtime import ScaleOperator
+
+intervention = Intervention(
+    intervention_id="scale-layer-8",
+    target=TensorRef(layer=8, component="resid_post", token=-1),
+    operator=ScaleOperator(0.5),
+)
+changed = runtime.forward(
+    ModelInput("prompt"),
+    interventions=(intervention,),
+)
+```
+
+`observe + condition` 可组成在线条件干预。条件只获得观察张量和最小
+`InterventionContext`；具体 Probe 或检测策略由插件实现。算子返回值必须与目标选择的
+shape、dtype 和 device 完全一致。
+
+## 逐 Token Generation
+
+```python
+from stegopot import GenerationConfig
+
+session = runtime.generate_session(
+    ModelInput("prompt"),
+    config=GenerationConfig(max_new_tokens=32, temperature=0),
+    policy=policy,
+)
+while not session.finished:
+  step = session.forward_next()
+  record = step.inspect(policy.refs[0])
+  token_id = step.sample()
+  session.commit(token_id)
+result = session.result()
+```
+
+`step.apply(interventions)` 会在 token 提交前重算当前步骤。初版 Hugging Face 会话使用
+完整前缀重算，强调正确、透明和可干预；高性能 KV cache 会话可由后端插件实现。
+
+## 数据与 Probe
+
+`DatasetPipeline` 固定执行：
+
+```text
+DatasetSource -> Transform -> Validate -> Grouped Split -> DatasetBundle
+```
+
+`Sample` 只有 `sample_id`、`input`、可选 `target` 和 `metadata`。实验插件可以在
+input/target 中放自己的结构，但核心不增加 secret 或 carrier 字段。
+
+`build_probe_dataset` 和 `build_layer_probe_datasets` 将中央标签与 ActivationTrace
+对齐，并支持 none、last_token、mean_tokens 和 flatten 池化。Probe 的训练、校准和
+评价由实现 `Probe` 的外部组件负责。
+
+## 事件与存储
+
+`InMemoryEventBus` 同步发布 forward、activation、generation、intervention 和实验
+生命周期事件。事件不得携带原始张量或凭证。
+
+`FileArtifactStore` 为每次运行创建独占目录，写入 config、metadata、outputs、metrics
+和 SHA-256 manifest。已存在文件、路径越界和封印后写入都会失败。

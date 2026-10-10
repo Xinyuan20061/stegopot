@@ -1,62 +1,89 @@
 # StegoPot 开发约束
 
-修改前阅读 docs/architecture.md。项目是开放的多 Agent 隐写实验框架，不是论文实验集合。
+修改代码前阅读 `docs/architecture.md`。StegoPot 是面向 LLM 隐写通信、内部机制与
+多智能体研究的轻量实验底座，不是某篇论文、某种归因算法或某个演示实验的实现。
 
-## 仓库边界
+## 核心边界
 
-- 源码只放 stegopot，用户配置只放 configs，文档只放 docs。
-- 不重新加入旧实验、历史结果、Console、演示脚本或论文专用扩展。
-- tests/contracts 只在本地维护宿主契约回归，不提交 GitHub、不随安装包分发；不得强制添加被忽略的测试。
-- configs 只提交 README.md；用户配置和子目录由 .gitignore 排除，文档可说明格式，不默认附带可运行实验。
-- outputs 运行时按需创建，不能提交研究数据；.env 保留且不得提交或回显。
-- 正式第三方插件独立开发和安装，不把它们的场景或评分硬编码进内核。
-- 保留根 README、AGENTS、打包配置及许可文件；不随意移动 .venv 和 IDE 环境。
+核心只负责以下不可替代能力：
 
-## 四层依赖
+- 模型后端能力声明与统一适配；
+- 可控 forward 和逐 token generation；
+- 指定 layer/component/token 的 activation 与 gradient 访问；
+- 作用域明确、异常后必清理的运行时干预；
+- 通用 Sample 的生成、变换、验证、分组切分和指纹；
+- 从 ActivationTrace 构造 Probe 数据的接口；
+- Dataset -> Scenario -> Analyze -> Evaluate -> Save 生命周期；
+- 多 Agent 通信、信息投影、StegoKit、检测、奖励和审计；
+- 插件注册、依赖注入、预检、能力匹配和资源关闭。
 
-依赖方向：bootstrap -> application / infrastructure -> domain。
+下列内容必须由外部插件或用户配置实现：
 
-- domain/model 只依赖自身和标准库；所有 ABC/Protocol 放 domain/interface。
-- application/engine 处理轮次、路由、隔离与管线；application/services 编排通用用例。
-- application 不导入具体配置读取器、供应商或记录器；依赖领域接口。
-- infrastructure 提供工作区、配置、模型、隐写、插件发现、检测和审计实现。
-- infrastructure/recorders 只接收标准 Mapping，不反向导入应用报告类型。
-- 同一能力内部按职责分目录，不创建混合职责的 utils/tools/core。
-- bootstrap 只接入、预检、组装和管理资源所有权，不编写实验算法。
-- stegopot 根目录只保留 domain、application、infrastructure、bootstrap 四个逻辑层。
+- EAP、AtP、SAE、特定 Probe 训练器和归因公式；
+- clean/corrupt、secret pair、单比特协议等实验语义；
+- 论文场景、数据内容、标签规则、指标与报告样式；
+- 特定模型架构的非通用 head/circuit 映射；
+- 可视化应用和历史实验结果。
 
-## 接口与参数
+## 最小化原则
 
-- 优先使用 domain/interface/registration.py 的 Plugin 装饰器，不使用全局可变注册表。
-- 组件统一为 type/config，数据类参数必须有中文 metadata.description。
-- 公共函数有类型注解和中文参数、返回值、所有权及失败边界说明。
-- 注释与文档字符串使用中文；不改变第三方 vendor 源码的原始声明。
-- 模型、codec 和审计通过声明槽位注入，组件不得访问未授权资源。
-- 宿主拥有注入资源，组件不得重复关闭依赖；工厂失败自行释放未移交资源。
-- 插件只能导入 stegopot.domain 契约，不反向依赖框架引擎和基础设施。
-- 安装与启用分离，仅配置明确允许的 entry point 可加载；不执行目录内任意脚本。
+- 新增模块前先证明现有 Protocol、组件 kind 或事件无法表达该需求。
+- 能由插件的 20 至 50 行实现完成的实验语义，不在核心增加平行服务。
+- 不因“以后可能使用”预置算法、配置字段或抽象层。
+- 一个职责只能有一套稳定入口；禁止同时保留专用白盒 API 和通用 TensorRef API。
+- 适配器只翻译后端，不实现研究算法；运行时只调度，不解释实验标签。
+- 删除功能前检查真实调用者、公开契约和资源生命周期；不要为追求目录短小破坏扩展点。
 
-## 隐写与审计
+## 四层结构
 
-- StegoKit、隐写接口、通信隔离、基础检测和强制审计属于核心能力。
-- 私有比特、公开载体、预共享材料、中央真值必须显式分离。
-- 新载体接口按实际收到的文本解码，不暗传编码端 token ID。
-- 检测器只读最终公开消息，不读取私有标签和密钥；节点不自动获得中央种子。
-- CLI 和文件级 API 不允许关闭宿主审计；写入失败立即中止，不伪造完整封印。
-- 记录真实请求、响应、工具调用、信道干预和失败；不得把失败当阴性样本。
-- 配对重放与真实生成、工具结果与模型决策必须区分；研究数据不得直接公开。
-- 模型适配器不得自动重试或绕过宿主预算；不从配置文本直接读取 API 密钥。
-- ExecutionGuard 由应用层实现，模型、codec 和运行器只依赖领域契约；停止后仍须释放资源。
-- 取消与时间上限为协作式检查，不声称能够强制终止第三方线程或网络请求。
-- 调用链标识只进入研究事件，不能加入节点观察、公开消息或公开审计投影。
-- 纯 preflight 钩子只接收当前组件与节点材料副本，不构造模型、不读取凭证、不联网。
-- 凭证文件读取不能修改全局环境；不同工作区之间不得隐式共享文件凭证。
+```text
+bootstrap -> application -> domain
+         \-> infrastructure -> domain
+```
+
+- `domain/model`：无外部依赖的值对象。
+- `domain/interface`：全部 Protocol、插件声明与稳定契约。
+- `application/engine`：多 Agent 状态与消息运行。
+- `application/services`：通用运行时、数据和实验编排。
+- `infrastructure`：模型、网络、文件、插件发现和 StegoKit 实现。
+- `bootstrap`：配置、CLI、组件组装和生命周期所有权。
+
+仓库只允许这四个顶层包。不要增加 `core`、`runtime`、`adapters` 等第五个物理层；
+这些概念应作为现有四层内部的逻辑子目录表达。
+
+## 接口与能力
+
+- 抽象接口集中在 `domain/interface`，实现目录不得声明 Protocol/ABC。
+- 插件通过 `@Plugin.component` 注册，不使用全局可变注册表。
+- 配置对象拒绝未知字段；所有 dataclass 参数必须提供中文 `metadata.description`。
+- 插件依赖模型能力，不依赖具体后端类。
+- API 模型可以作为黑盒 `llm` 资源；只有真实支持 Hook 的后端才能声明
+  `activation_read`、`activation_write` 或 `gradient_read`。
+- capability 缺失必须在模型加载和实验执行前失败。
+- TensorRef 无法解析时显式失败，不猜测未知架构。
+
+## 数据与安全
+
+- 通用 `Sample` 不包含 secret、carrier 或 clean/corrupt 等特定语义。
+- 中央标签只在 Dataset、Analyzer、Metric 或 Probe 数据边界内流动。
+- activation 原值不进入 RuntimeEvent 或普通 JSON 审计；磁盘轨迹只记录引用和摘要。
+- `.env`、模型凭证、用户配置、测试、输出和 activation 工件不得提交。
+- 插件按 `trusted_in_process` 运行；接口隔离不是操作系统安全沙箱。
+- 文件写入必须独占，不能静默覆盖已有运行。
+
+## 代码规范
+
+- 注释、docstring 和面向用户的错误信息使用中文；标识符使用英文。
+- 公开构造器和方法说明每个参数、返回值及所有权。
+- 高内聚、低耦合；优先组合已有对象，不创建万能 manager 或 utils。
+- 重型依赖惰性导入；基础安装不强制安装 PyTorch/Transformers。
+- Hook、会话、模型、文件和插件资源必须在成功与异常路径中释放。
+- 不吞异常，不把失败样本当成阴性，不伪造完成或封印状态。
 
 ## 验证
 
-- 手动编辑使用 apply_patch，不还原用户变更；结构变化同步 README 与架构文档。
-- 不恢复旧实验测试；新的框架契约测试集中在 tests/contracts，夹具和结果只进入临时工作区。
-- 本地具备测试时，修改内核后执行 python -m unittest discover -s tests/contracts -v；同时检查独立分发包。缺少测试时应明确说明验证范围。
-- 验证配置发现、歧义拒绝、拓扑隔离、资源注入、失败记录、审计封印和安装包独立运行。
-- 检查目录和依赖方向；打包前初始化 StegoKit 子模块，避免发布缺失核心能力的包。
-- 默认只运行离线或本地模拟请求；付费 API 必须明确授权，临时结果不留在仓库。
+- 本地 `tests/contracts` 被 Git 忽略，只验证框架契约，不上传。
+- 修改后运行完整契约测试、源码编译、wheel 构建和隔离安装。
+- 白盒运行至少验证：选择性采集、梯度回收、真实干预、Hook 清理、逐 token 提交。
+- 插件至少验证：严格 schema、依赖引用、capability 预检、失败关闭和向后兼容。
+- 文档、版本号、内置插件版本与公开 API 必须一致。

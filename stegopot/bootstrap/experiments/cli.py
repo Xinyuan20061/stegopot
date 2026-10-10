@@ -10,6 +10,10 @@ import re
 
 from stegopot import __version__
 from stegopot.bootstrap.experiments.api import prepare_file
+from stegopot.bootstrap.experiments.research import (
+    PreparedResearchExperiment,
+    run_research_experiment,
+)
 from stegopot.bootstrap.experiments.builtin import builtin_plugin
 from stegopot.bootstrap.experiments.run import run_experiment
 from stegopot.bootstrap.experiments.recompute import recompute_experiment
@@ -20,7 +24,7 @@ from stegopot.infrastructure.plugins.catalog import PluginCatalog, installed_plu
 from stegopot.infrastructure.recorders.audit.integrity import verify_experiment
 from stegopot.infrastructure.recorders.audit.reader import AuditReader
 from stegopot.infrastructure.settings.diagnostics import diagnose_resources
-from stegopot.infrastructure.settings.experiment import CONFIG_SCHEMA
+from stegopot.infrastructure.settings.experiment import ALL_CONFIG_SCHEMA
 from stegopot.infrastructure.settings.workspace import ExperimentWorkspace
 
 
@@ -104,7 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
           catalog.load([args.name])
         payload = [item for item in catalog.describe() if item["id"] == args.name]
     elif args.command == "schema":
-      payload = CONFIG_SCHEMA
+      payload = ALL_CONFIG_SCHEMA
       if args.component:
         components = {item.component_id: item for item in builtin_plugin().components}
         if args.component not in components:
@@ -140,9 +144,17 @@ def main(argv: Sequence[str] | None = None) -> int:
       if args.command in {"validate", "doctor"}:
         diagnostics = list(prepared.diagnostics)
         if args.command == "doctor":
-          diagnostics.extend(diagnose_resources(prepared.config["resources"]))
+          resources = dict(prepared.config["resources"])
+          if isinstance(prepared, PreparedResearchExperiment):
+            resources["__runtime_adapter__"] = prepared.config["runtime"]["adapter"]
+          diagnostics.extend(diagnose_resources(resources))
         ready = not any(item.severity == "error" for item in diagnostics)
-        payload = {"valid": True, "trials": len(prepared.plan.trials),
+        payload = {"valid": True,
+                   "mode": "research" if isinstance(
+                       prepared, PreparedResearchExperiment) else "multi_agent",
+                   "trials": None if isinstance(
+                       prepared, PreparedResearchExperiment)
+                   else len(prepared.plan.trials),
                    "plugins": [item["id"] for item in prepared.catalog.describe()],
                    "diagnostics": [item.to_dict() for item in diagnostics]}
         if args.command == "doctor":
@@ -153,7 +165,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = layout.outputs if args.output is None else layout.root / Path(args.output).expanduser()
         cancellation = CancellationToken()
         with cancellation_signals(cancellation):
-          report, directory = run_experiment(prepared, output=output, cancellation=cancellation)
+          if isinstance(prepared, PreparedResearchExperiment):
+            result, directory = run_research_experiment(
+                prepared, output=output)
+            report = {
+                "status": result.status,
+                "summary": dict(result.summary),
+                "model_calls": 0,
+                "execution": {
+                    "mode": "research", "records": len(result.records)},
+            }
+          else:
+            report, directory = run_experiment(
+                prepared, output=output, cancellation=cancellation)
         payload = {"status": report["status"], "directory": str(directory),
                    "summary": report["summary"], "model_calls": report["model_calls"],
                    "execution": report["execution"]}

@@ -1,129 +1,115 @@
-# 框架架构
+# StegoPot 架构
 
-## 项目边界
+## 定位
 
-StegoPot 是多 Agent 隐写实验框架。核心保留通信隔离、StegoKit、基础检测与审计，
-不包含具体论文场景、共谋协议、历史配置、结果或可视化应用。
-用户的实验由自己的配置和独立插件定义，安装框架不会自动创建或运行实验。
+StegoPot 提供一类 LLM 隐写与多智能体实验共同需要的底层能力：
 
-仓库只有三类主要目录：`stegopot/` 是实现，`configs/` 是用户输入，`docs/` 是文档。
-开发者本地另有 tests/contracts，只验证框架契约；该目录被 Git 忽略，不上传也不随安装包分发。
-`outputs/` 按运行需要生成。安装包只分发 `stegopot`，工作区可以建立在任何用户目录。
-`.env` 与 `.venv` 属于本机环境，不属于业务层；凭证和结果不能提交仓库。
+```text
+StegoPot Core
+  = Controlled Model Runtime
+  + Dataset Pipeline
+  + Research Lifecycle
+  + Multi-Agent Runtime
+  + Steganography Foundations
+  + Plugin and Audit Contracts
+```
 
-## 四层结构
+具体实验由配置和外部插件组成。核心不知道 EAP、秘密比特、clean/corrupt、线性 Probe
+或某篇论文场景的含义。
+
+## 四层目录
 
 ```text
 stegopot/
   domain/
-    interface/                  所有 ABC/Protocol、插件声明、预检、执行控制与调用链契约
-    model/                      消息、动作、奖励证据、会话计划、威胁模型、诊断与取消令牌
+    model/          通用值对象：TensorRef、Trace、Sample、Context、消息和拓扑
+    interface/      ModelAdapter、Dataset、Probe、Scenario、Plugin 等协议
   application/
-    engine/                     节点状态、轮次调度、路由、信息投影和分层预算
-    services/                   威胁模型编译与通用奖励实现
-      experiments/             通用 Trial/Session 场景、生命周期执行与结果汇总
-      rewards/                 逐轮公开证据奖励与中央 Episode 结果奖励
+    engine/         多 Agent 节点、路由、环境和轮次状态
+    services/
+      runtime/      ModelRuntime、事件总线和基础干预算子
+      data/         数据流水线及逐层 Probe 数据视图
+      research/     通用实验生命周期
+      experiments/ 多 Agent 场景与执行
+      rewards/      多 Agent 奖励
   infrastructure/
-    settings/                   工作区发现、配置校验、独立环境快照
-    plugins/                    已安装 entry point 发现与模式校验
-    llm/                        策略、提示解析、请求与工具审计
-      clients/                  通用 HTTP 模型适配与模拟客户端
-    integrations/stegokit/     核心隐写适配与实际载体编解码
-    vendor/stego-kit/           固定版本上游源码
-    substrates/                通信环境和公开信道实现
-    detectors/                 基础公开载体检测
-    recorders/audit/            双日志、调用关联、只读查询、脱敏、封印和报告
+    model_adapters/ Hugging Face 可控模型适配
+    llm/            Chat Completions 黑盒客户端与 Agent 策略
+    integrations/   StegoKit 集成
+    storage/        实验工件和磁盘张量
+    plugins/        已安装插件发现
+    recorders/      多 Agent 审计
+    settings/       配置和工作区
   bootstrap/
-    experiments/               文件级 API、CLI、预检、组装和资源生命周期
+    experiments/    v1/v2 配置、组件组装、CLI 和文件级 API
 ```
-
-目录体现调用职责，不按每个实验新建一套框架。兼容 Builder 接口仍可用于嵌入调用，
-但标准实验推荐文件级 API/CLI，以得到强制审计、版本清单和统一失败记录。
-0.9 已删除旧 DetectionExperimentBuilder 和装饰器式隐写/检测 Substrate，防止同一实验
-同时存在两套消息处理、检测和真实标签语义。
 
 ## 依赖方向
 
-| 区域 | 允许依赖 |
+| 区域 | 可依赖 |
 | --- | --- |
-| domain.model | 自身、标准库 |
-| domain.interface | 自身、domain.model、标准库 |
-| application.engine | 自身、domain |
-| application.services | 自身、application.engine、domain |
-| infrastructure.settings | 自身、domain.model |
-| infrastructure.llm | 自身、settings、domain |
-| infrastructure.integrations | 自身、domain.interface |
-| infrastructure.substrates / detectors / plugins | 自身、domain |
-| infrastructure.recorders | 自身、标准库 |
-| bootstrap | 上述区域，只做组装和边界接入 |
-| 第三方插件 | 自己的实现与 stegopot.domain 契约 |
+| domain.model | 标准库和自身 |
+| domain.interface | domain |
+| application | domain、application |
+| infrastructure | domain、infrastructure |
+| bootstrap | 全部层，仅负责组装 |
 
-不创建第五个技术层，不把抽象类分散到实现目录，不用统一 utils 隐藏依赖。
-Plugin 装饰器只生成组件声明；发现已安装插件属于基础设施，调用工厂属于组合根。
+实现层不得反向导入 `bootstrap`。所有 Protocol 位于 `domain/interface`。
 
-## 执行链路
+## 稳定抽象
+
+1. `ModelAdapter`：把模型生态映射为 capability。
+2. `ModelRuntime`：统一检查能力、合并干预并管理后端生命周期。
+3. `TensorRef`：统一定位 module/layer/component/token。
+4. `ActivationTrace`：保存选择性激活和可选梯度。
+5. `Intervention`：把外部算子绑定到目标与可选条件。
+6. `Sample` / `DatasetBundle`：不包含实验特定语义的数据边界。
+7. `ResearchScenario`：定义一个样本如何发生。
+8. `ComponentDefinition`：插件工厂、依赖、凭证和 capability 声明。
+
+## 两条执行链
+
+通用机制实验使用 v2 配置：
 
 ```text
-CLI / prepare_file / run_file
- -> ExperimentWorkspace：选择唯一配置、生成独立环境快照
- -> load_config：读取 JSON/YAML 并做严格校验
- -> prepare_experiment：发现允许的组件、执行纯预检、校验凭证与引用、固定计划
- -> ScenarioProvider.plan：只返回 ExperimentPlan、独立 Trial 或有序 Session/Episode
- -> ThreatModelCompiler：将配置和固定计划编译为有效组件视图与摘要
- -> ExecutionBudget：创建全局、试验和节点额度，响应取消与截止时间
- -> run_plan：Run -> Condition -> Session -> Episode，控制状态与失败传播
- -> ComponentSession：为每个 Episode 构造组件，注入已审计、已限额的模型、codec 和 Tool
- -> MultiAgentRuntime：局部观察 -> Policy.step -> 候选消息
- -> 环境 -> 信道变换 -> 公开检测 -> Reward -> 下一轮收件箱
- -> OutcomeReward：读取 Episode 结果与 truth，只向同 Session 下一 Episode 返回节点标量
- -> Evaluator：中央评分，不回填模型答案
- -> TracedAudit -> AuditJournal：调用链、研究/公开日志和关联封印
- -> AuditReader：默认核验后查询，只读取封印报告声明的试验
+Config v2
+ -> PluginCatalog / capability preflight
+ -> ComponentSession
+ -> ModelAdapter -> ModelRuntime
+ -> DatasetPipeline
+ -> ResearchScenario
+ -> Analyzer -> Metric -> Reporter
+ -> FileArtifactStore
 ```
 
-工作区发现不解析配置，预检不创建模型；第三方场景必须自行遵守纯计划约束。
-文件级入口不切换进程工作目录、不修改 os.environ，输出默认属于指定工作区。
-框架只解析自己定义的路径，不猜测插件任意字符串参数是否是文件路径。
-当前本地 StegoKit 的 model_path 应使用绝对路径，插件自行声明自己的路径语义。
+多 Agent 实验继续使用 v1 配置：
 
-## 隔离与生命周期
+```text
+Config v1
+ -> ScenarioProvider -> ExperimentPlan
+ -> ThreatModelCompiler
+ -> MultiAgentRuntime
+ -> Channel / Detector / Reward / Evaluator
+ -> AuditJournal
+```
 
-- shared_context 显式公开；node_contexts[id] 只给对应节点；truth 只给中央评价和 OutcomeReward。
-- 每次标准运行生成 threat-model.json，记录实际组件视图、信任假设和计划/拓扑摘要。
-- 不把中央种子、试验编号和完整计划自动投影给节点。
-- 信道只能改公开正文或阻断，不能改变身份、轮次、目标或增加元数据。
-- 检测器只读最终公开消息，不能通过宿主接口读取私有比特或预共享密钥。
-- 奖励组件只读受限公开证据和裁剪后的检测信号；节点只获得自己的合成标量。
-- OutcomeReward 只在中央 Episode 结束阶段读取 result/truth，不能访问或修改策略状态。
-- 策略状态只在同一 Session 内按节点原样延续；状态不序列化、不审计、不跨 Session。
-- 每个 Episode 都重置 Substrate、收件箱和上一动作；失败会跳过同 Session 的剩余 Episode。
-- 模型、codec 和 Tool 按 Episode 及节点构造、缓存；所有权由宿主统一管理并逆序关闭。
-- 凭证只传给声明 credentials 的模型工厂，不传给策略、信道或评分器。
-- 内置模型适配不自动重试，不跟随重定向，不把鉴权头或服务端错误正文打印出来。
-- 插件自定义事件进入 plugin.event 命名空间，不能伪造宿主的公开投递事件。
-- preflight 是可选纯函数，返回带 code/path/hint 的诊断；核心调度不硬编码插件校验逻辑。
-- ExecutionGuard 通过领域协议跨层注入；全局停止影响后续试验，局部额度耗尽只终止当前试验。
-- 中央评分资源只使用全局额度，不占用实验节点的局部额度。
-- trace/span/call 标识只进入研究视图，不进入公开正文、公开日志或节点观察。
+两条链共用插件目录、配置读取、凭证约定和 CLI。它们没有两套注册系统。
 
-上述约束使用 trusted_in_process 信任模型，适用于可信组件，不是 Python 进程安全沙箱。
-热插拔指两次实验之间启停或更换组件；更换已安装代码后使用新进程。
+## 后端能力
 
-## 审计契约
+`core.huggingface` 提供 forward、generation、token-step control、activation read/write
+和 gradient read。`core.chat_completions` 是多 Agent 可用的黑盒 LLM 资源，不声明模型
+内部能力。外部 TransformerLens、vLLM 或自定义后端通过 `model_adapter` 插件接入。
 
-标准输出契约为 stegopot.report/1，根清单为 stegopot.manifest/3，威胁模型为
-stegopot.threat-model/2。完整记录包括配置、计划、有效信息边界、组件版本、源码摘要、
-成功/失败/跳过状态、模型请求和实际回复、工具结果与消息干预。
-CLI 和文件级 API 不能关闭宿主日志；写入失败中止，不生成虚假完整封印。
-公开日志只是白名单投影，不能保证模型主动输出的正文不泄密。
-哈希链检查内部一致性，配合独立根哈希锚点核验，不能宣传为签名或可信时间戳。
+## 保持轻量
 
-## 开发验证
+- PyTorch/Transformers 是 `whitebox` 可选依赖。
+- 默认只采集显式 TensorRef；不默认保存所有层。
+- Trace 可留在设备、转 CPU 或写外部 TraceStore。
+- EAP、Probe 模型、SAE 和论文协议不随核心安装。
+- 只有 `FileArtifactStore`、基础张量算子和 Hugging Face 适配器作为参考实现。
 
-公开仓库不包含测试文件。开发者本地 tests/contracts 维护纯框架回归，验证入口、拓扑、
-插件、会话状态、结果反馈、预算、取消、资源关闭、公开投影、审计核验与四层依赖。
-本地具备测试集时，通过 python -m unittest discover -s tests/contracts -v 运行，并额外检查安装包脱离源码目录后能否工作。
-测试结果和临时配置不得回填 configs 或作为框架预置实验发布。
+## 信任边界
 
-1.0 的参数、状态和调用约定见 [内核控制与审计](kernel.md)，威胁模型见
-[威胁模型与信息边界](threat_model.md)。
+第三方插件是同进程可信代码。宿主限制正常接口能看到的资源、凭证和数据，但不能阻止
+恶意 Python 代码直接访问进程、文件或网络。需要强隔离时应在外部容器或受限进程中运行。

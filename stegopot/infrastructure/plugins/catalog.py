@@ -112,6 +112,13 @@ class PluginCatalog:
       raise ValueError(f"未注册组件：{component_id}")
     return self._components[component_id].kind
 
+  def definition(self, component_id: str) -> ComponentDefinition:
+    """返回组件定义，供宿主在构造资源前完成能力预检。"""
+    try:
+      return self._components[component_id]
+    except KeyError as exc:
+      raise ValueError(f"未注册组件：{component_id}") from exc
+
   def freeze(self) -> None:
     """固定本次实验的注册清单；后续调用 add/load 将被拒绝。"""
     self._frozen = True
@@ -124,6 +131,10 @@ class PluginCatalog:
         "components": [{"id": item.component_id, "kind": item.kind,
                         "config_schema": json_copy(item.config_schema),
                         "references": dict(item.references), "credentials": list(item.credentials),
+                        "requires_capabilities": [
+                            value.value for value in item.requires_capabilities],
+                        "provides_capabilities": [
+                            value.value for value in item.provides_capabilities],
                         "has_preflight": item.preflight is not None}
                        for item in plugin.components],
     } for plugin in self._plugins.values()]

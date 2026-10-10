@@ -30,12 +30,11 @@ class _ScopedAudit:
         "component": self._component, "event": json_copy(dict(event)),
     }})
 
-
 class _Context:
   """BuildContext 的实现，不持有全局注册表、实验计划或全部环境变量。"""
 
   def __init__(self, *, node_id, audit, resources, credentials):
-    """接收已授权的 node_id、audit、resources 和 credentials 副本。"""
+    """接收局部身份、审计、资源和凭证。"""
     self.node_id = node_id
     self.audit = audit
     self._resources = dict(resources)
@@ -52,7 +51,6 @@ class _Context:
     if name not in self._credentials:
       raise PermissionError("组件没有获得该凭证授权")
     return self._credentials[name]
-
 
 class ComponentSession:
   """每个执行单元使用新组件会话；缓存局部所有，资源在结束时逆序关闭。"""
@@ -121,14 +119,26 @@ class ComponentSession:
     if self._control is not None:
       self._control.checkpoint()
     required = {
-        "scenario": ("plan",), "policy": ("initial_state", "step", "close"),
+        "policy": ("initial_state", "step", "close"),
         "llm": ("generate", "close"), "substrate": ("reset", "observe", "step", "state", "close"),
         "channel": ("transform",), "codec": ("encode", "decode", "close"),
         "detector": ("reset", "detect", "close"), "reward": ("score",),
         "outcome_reward": ("score",),
         "evaluator": ("evaluate", "summarize"),
         "tool": ("execute", "close"), "audit": ("emit",),
-    }[kind]
+        "model_adapter": ("resolve", "forward", "open_generation_session", "close"),
+        "dataset": ("generate",), "transform": ("apply",),
+        "validator": ("validate",), "analyzer": ("analyze",),
+        "probe": ("fit", "predict", "score", "save", "close"),
+        "metric": ("evaluate",), "reporter": ("summarize", "report"),
+        "agent": ("initial_state", "step"), "protocol": (),
+        "intervention": (),
+    }.get(kind, ())
+    if kind == "scenario":
+      alternatives = (("plan",), ("setup", "run", "teardown"))
+      if not any(all(callable(getattr(instance, method, None)) for method in group)
+                 for group in alternatives):
+        raise ContractViolation(f"组件 {spec.type} 没有满足 scenario 的方法契约")
     if any(not callable(getattr(instance, method, None)) for method in required):
       raise ContractViolation(f"组件 {spec.type} 没有满足 {kind} 的方法契约")
     if kind == "llm":

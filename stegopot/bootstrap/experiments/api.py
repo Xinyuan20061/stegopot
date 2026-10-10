@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from stegopot.bootstrap.experiments.prepare import PreparedExperiment, prepare_experiment
+from stegopot.bootstrap.experiments.research import (
+    PreparedResearchExperiment,
+    prepare_research_experiment,
+    run_research_experiment,
+)
 from stegopot.bootstrap.experiments.run import run_experiment
 from stegopot.bootstrap.experiments.recompute import recompute_experiment
 from stegopot.domain.model.execution import CancellationToken
@@ -39,7 +44,7 @@ def prepare_file(
     config: str | Path | None = None, *, workspace: str | Path = ".",
     env_file: str | Path | None = None, load_env: bool = True,
     environment: Mapping[str, str] | None = None, catalog: PluginCatalog | None = None,
-) -> PreparedExperiment:
+) -> PreparedExperiment | PreparedResearchExperiment:
   """从用户配置准备实验，不创建模型客户端、不写结果。
 
   参数：
@@ -57,7 +62,11 @@ def prepare_file(
   layout = ExperimentWorkspace(Path(workspace))
   source = layout.resolve_config(config)
   values = layout.environment(env_file=env_file, load_env=load_env, overrides=environment)
-  return prepare_experiment(load_config(source), catalog=catalog, environment=values)
+  loaded = load_config(source)
+  if loaded.get("schema_version") == "2":
+    return prepare_research_experiment(
+        loaded, catalog=catalog, environment=values)
+  return prepare_experiment(loaded, catalog=catalog, environment=values)
 
 
 def diagnose_file(
@@ -81,7 +90,10 @@ def diagnose_file(
   """
   prepared = prepare_file(config, workspace=workspace, env_file=env_file, load_env=load_env,
                           environment=environment, catalog=catalog)
-  return (*prepared.diagnostics, *diagnose_resources(prepared.config["resources"]))
+  resources = dict(prepared.config["resources"])
+  if prepared.config.get("schema_version") == "2":
+    resources["__runtime_adapter__"] = prepared.config["runtime"]["adapter"]
+  return (*prepared.diagnostics, *diagnose_resources(resources))
 
 
 def run_file(
@@ -113,4 +125,17 @@ def run_file(
                           environment=environment, catalog=catalog)
   layout = ExperimentWorkspace(Path(workspace))
   destination = layout.outputs if output is None else layout.root / Path(output).expanduser()
-  return run_experiment(prepared, output=destination, progress=progress, cancellation=cancellation)
+  if isinstance(prepared, PreparedResearchExperiment):
+    result, directory = run_research_experiment(prepared, output=destination)
+    report = {
+        "status": result.status,
+        "summary": dict(result.summary),
+        "records": len(result.records),
+        "artifacts": dict(result.artifacts),
+        "model_calls": 0,
+        "execution": {"mode": "research", "records": len(result.records)},
+    }
+    return report, directory
+  return run_experiment(
+      prepared, output=destination, progress=progress,
+      cancellation=cancellation)

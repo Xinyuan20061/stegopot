@@ -1,6 +1,7 @@
 # 威胁模型与信息边界
 
-本页对应 StegoPot 1.0.0 的 `stegopot.threat-model/2` 契约。它把实验中的
+本页对应 StegoPot 2.0 多 Agent 配置（`schema_version: "1"`）的
+`stegopot.threat-model/2` 运行期契约。它把实验中的
 组件可见信息、信任前提和审计范围编译成运行前固定的 `ThreatModelManifest`。
 
 ## 保证范围

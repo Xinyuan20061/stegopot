@@ -31,6 +31,26 @@ def diagnose_resources(resources: Mapping[str, Mapping[str, Any]]) -> tuple[Diag
   issues = []
   for name, spec in resources.items():
     path = f"resources.{name}.config"
+    if spec["type"] == "core.huggingface":
+      for package in ("torch", "transformers", "safetensors"):
+        try:
+          metadata.version(package)
+        except metadata.PackageNotFoundError:
+          issues.append(Diagnostic(
+              "environment.dependency_missing", path,
+              f"缺少本地白盒依赖 {package}",
+              "安装框架的 whitebox 可选依赖"))
+      model = Path(spec["config"]["model_path"]).expanduser()
+      if model.is_absolute() and not model.is_dir():
+        issues.append(Diagnostic(
+            "environment.model_missing", path + ".model_path",
+            "本地白盒模型目录不存在", "准备模型后填写有效绝对路径"))
+      elif not model.is_absolute():
+        issues.append(Diagnostic(
+            "environment.model_source_unverified", path + ".model_path",
+            "模型来源不是可直接核验的绝对目录",
+            "正式实验使用固定本地目录或另行保存 Hub 快照摘要",
+            severity="warning"))
     if spec["type"] == "core.stegokit":
       for package in ("numpy", "torch", "transformers"):
         try:

@@ -112,6 +112,87 @@ CONFIG_SCHEMA = {
     },
 }
 
+RESEARCH_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": ["schema_version", "runtime", "dataset", "scenario"],
+    "additionalProperties": False,
+    "properties": {
+        "schema_version": {"const": "2"},
+        "plugins": CONFIG_SCHEMA["properties"]["plugins"],
+        "seed": {"type": "integer"},
+        "resources": {
+            "type": "object", "additionalProperties": COMPONENT_SCHEMA,
+            "description": "供组件 references 显式引用的可复用资源。",
+        },
+        "runtime": {
+            "type": "object", "required": ["adapter"],
+            "additionalProperties": False,
+            "properties": {
+                "adapter": {
+                    **COMPONENT_SCHEMA,
+                    "description": "提供声明能力的可控模型适配器。",
+                },
+                "max_model_calls": {
+                    "type": "integer", "minimum": 1, "maximum": 100000,
+                    "description": "研究插件可调用 API 模型的总次数上限。",
+                },
+                "max_output_tokens": {
+                    "type": "integer", "minimum": 1, "maximum": 65536,
+                    "description": "单次 API 模型调用的输出 token 上限。",
+                },
+            },
+        },
+        "dataset": {
+            "type": "object", "required": ["source", "count"],
+            "additionalProperties": False,
+            "properties": {
+                "source": {**COMPONENT_SCHEMA, "description": "通用样本数据源。"},
+                "count": {
+                    "type": "integer", "minimum": 1, "maximum": 1000000,
+                    "description": "请求数据源生成的最大样本数。",
+                },
+                "transforms": {
+                    "type": "array", "items": COMPONENT_SCHEMA,
+                    "description": "按顺序执行的样本转换组件。",
+                },
+                "validators": {
+                    "type": "array", "items": COMPONENT_SCHEMA,
+                    "description": "切分前执行的样本验证组件。",
+                },
+                "split": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {
+                        "train": {"type": "number", "minimum": 0, "maximum": 1},
+                        "validation": {"type": "number", "minimum": 0, "maximum": 1},
+                        "test": {"type": "number", "minimum": 0, "maximum": 1},
+                        "seed": {"type": "integer"},
+                        "group_key": {"type": ["string", "null"], "minLength": 1},
+                    },
+                    "description": "确定性且可按 metadata 分组的数据切分。",
+                },
+            },
+        },
+        "scenario": {
+            **COMPONENT_SCHEMA,
+            "description": "定义一个 Sample 如何使用 ExperimentContext 执行。",
+        },
+        "analyzers": {"type": "array", "items": COMPONENT_SCHEMA},
+        "metrics": {"type": "array", "items": COMPONENT_SCHEMA},
+        "reporters": {"type": "array", "items": COMPONENT_SCHEMA},
+        "partitions": {
+            "type": "array", "minItems": 1, "uniqueItems": True,
+            "items": {"enum": ["train", "validation", "test"]},
+            "description": "实际执行的数据切分。",
+        },
+    },
+}
+
+ALL_CONFIG_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [CONFIG_SCHEMA, RESEARCH_CONFIG_SCHEMA],
+}
+
 
 class _UniqueSafeLoader(yaml.SafeLoader):
   """安全 YAML 解析器，同时拒绝重复键和复杂映射键。"""
@@ -144,12 +225,39 @@ def _unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def validate_config(value: Any) -> dict[str, Any]:
   """校验 value 并填入框架默认值，所有返回数据均为 JSON 类型。"""
   data = json_copy(value)
-  errors = list(Draft202012Validator(CONFIG_SCHEMA).iter_errors(data))
+  schema = RESEARCH_CONFIG_SCHEMA if data.get("schema_version") == "2" else CONFIG_SCHEMA
+  errors = list(Draft202012Validator(schema).iter_errors(data))
   if errors:
     path = ".".join(str(part) for part in errors[0].absolute_path) or "root"
     raise PreflightError([Diagnostic(
         "schema." + errors[0].validator, path, "实验配置未通过模式校验",
         "查看 schema 输出，检查字段类型、必填参数与允许范围")])
+  if data.get("schema_version") == "2":
+    data.setdefault("plugins", [])
+    data.setdefault("seed", 0)
+    data.setdefault("resources", {})
+    data.setdefault("analyzers", [])
+    data.setdefault("metrics", [])
+    data.setdefault("reporters", [])
+    data.setdefault("partitions", ["train", "validation", "test"])
+    data["runtime"] = {
+        "max_model_calls": 64, "max_output_tokens": 1024,
+        **data["runtime"],
+    }
+    data["dataset"].setdefault("transforms", [])
+    data["dataset"].setdefault("validators", [])
+    data["dataset"]["split"] = {
+        "train": 0.7, "validation": 0.15, "test": 0.15,
+        "seed": data["seed"], "group_key": None,
+        **data["dataset"].get("split", {}),
+    }
+    ratios = data["dataset"]["split"]
+    if abs(ratios["train"] + ratios["validation"] + ratios["test"] - 1.0) > 1e-9:
+      raise PreflightError([Diagnostic(
+          "schema.split_ratio", "dataset.split",
+          "train、validation 和 test 比例之和必须为 1",
+          "调整三个切分比例")])
+    return data
   defaults = {"plugins": [], "seed": 0, "resources": {}, "policies": {},
               "channels": [], "detectors": [], "rewards": [], "outcome_rewards": [],
               "evaluators": [], "audit_sinks": []}

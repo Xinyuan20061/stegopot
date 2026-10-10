@@ -72,12 +72,12 @@ def run_experiment(
   calls = CallBudget(limits["max_model_calls"])
   control = ExecutionBudget(limits, cancellation=cancellation)
   started = time.monotonic()
-
   def session(audit: AuditSink, guard: ExecutionGuard) -> ComponentSession:
     """为 audit/guard 创建受控会话，只注入本次配置声明的资源。"""
     return ComponentSession(prepared.catalog, resources=prepared.resources,
                             credentials=prepared.credentials, audit=audit,
-                            budget=calls, max_output_tokens=limits["max_output_tokens"], control=guard)
+                            budget=calls, max_output_tokens=limits["max_output_tokens"],
+                            control=guard)
 
   root_guard = control.global_scope()
   root_session = session(root_audit, root_guard)

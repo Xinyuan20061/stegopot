@@ -1,71 +1,97 @@
-"""不依赖运行器和外部工具的稳定领域对象。"""
+"""StegoPot 的稳定领域对象。"""
 
 from stegopot.domain.model.action import AgentAction
-from stegopot.domain.model.detection import DetectionFinding
-from stegopot.domain.model.detection import DetectionMetrics
-from stegopot.domain.model.detection import DetectionRequest
-from stegopot.domain.model.detection import DetectionResult
-from stegopot.domain.model.experiment import EpisodeSpec
-from stegopot.domain.model.experiment import ComponentSpec
-from stegopot.domain.model.experiment import CounterfactualSpec
-from stegopot.domain.model.experiment import ExperimentPlan
-from stegopot.domain.model.experiment import NodeSpec
-from stegopot.domain.model.experiment import PairedCarrier
-from stegopot.domain.model.experiment import ReplaySpec
-from stegopot.domain.model.experiment import TrialSpec
-from stegopot.domain.model.experiment import SessionSpec
+from stegopot.domain.model.capability import Capability, MissingCapabilityError
+from stegopot.domain.model.context import (
+    ExperimentContext,
+    ResearchExperimentResult,
+    SampleRunRecord,
+)
+from stegopot.domain.model.data import DatasetBundle, Sample, SplitPolicy
 from stegopot.domain.model.communication import CommunicationIntent
-from stegopot.domain.model.information import InformationAsset
-from stegopot.domain.model.information import InformationClass
+from stegopot.domain.model.detection import (
+    DetectionFinding,
+    DetectionMetrics,
+    DetectionRequest,
+    DetectionResult,
+)
+from stegopot.domain.model.events import EventKind, RuntimeEvent
+from stegopot.domain.model.experiment import (
+    ComponentSpec,
+    CounterfactualSpec,
+    EpisodeSpec,
+    ExperimentPlan,
+    NodeSpec,
+    PairedCarrier,
+    ReplaySpec,
+    SessionSpec,
+    TrialSpec,
+)
+from stegopot.domain.model.information import InformationAsset, InformationClass
+from stegopot.domain.model.intervention_runtime import (
+    Intervention,
+    InterventionContext,
+)
 from stegopot.domain.model.message import AgentMessage
-from stegopot.domain.model.reward import RewardAction
-from stegopot.domain.model.reward import RewardDetectionSignal
-from stegopot.domain.model.reward import RewardRequest
-from stegopot.domain.model.reward import EpisodeOutcomeRequest
-from stegopot.domain.model.topology import AgentTopology
-from stegopot.domain.model.topology import TopologyError
-from stegopot.domain.model.tool import ToolCallIntent
-from stegopot.domain.model.tool import ToolCallRecord
-from stegopot.domain.model.tool import ToolRequest
-from stegopot.domain.model.tool import ToolResult
-from stegopot.domain.model.threat import AuditViewSpec
-from stegopot.domain.model.threat import DetectorViewSpec
-from stegopot.domain.model.threat import PolicyViewSpec
-from stegopot.domain.model.threat import ThreatModelManifest
-from stegopot.domain.model.threat import ThreatModelSpec
+from stegopot.domain.model.reward import (
+    EpisodeOutcomeRequest,
+    RewardAction,
+    RewardDetectionSignal,
+    RewardRequest,
+)
+from stegopot.domain.model.probe import (
+    ProbeDataset,
+    ProbeExample,
+    ProbeInputSpec,
+    ProbeScore,
+)
+from stegopot.domain.model.reference import (
+    ResolvedTensorRef,
+    TensorRef,
+    TracePolicy,
+)
+from stegopot.domain.model.runtime import (
+    ForwardResult,
+    GenerationConfig,
+    GenerationResult,
+    ModelInput,
+)
+from stegopot.domain.model.topology import AgentTopology, TopologyError
+from stegopot.domain.model.tool import (
+    ToolCallIntent,
+    ToolCallRecord,
+    ToolRequest,
+    ToolResult,
+)
+from stegopot.domain.model.threat import (
+    AuditViewSpec,
+    DetectorViewSpec,
+    PolicyViewSpec,
+    ThreatModelManifest,
+    ThreatModelSpec,
+)
+from stegopot.domain.model.trace import (
+    ActivationRecord,
+    ActivationTrace,
+    StoredTensorRef,
+)
 
 __all__ = [
-    "AgentAction",
-    "AgentMessage",
-    "AgentTopology",
-    "AuditViewSpec",
-    "CommunicationIntent",
-    "ComponentSpec",
-    "CounterfactualSpec",
-    "DetectionFinding",
-    "DetectionMetrics",
-    "DetectionRequest",
-    "DetectionResult",
-    "DetectorViewSpec",
-    "EpisodeOutcomeRequest",
-    "EpisodeSpec",
-    "ExperimentPlan",
-    "InformationAsset",
-    "InformationClass",
-    "NodeSpec",
-    "PairedCarrier",
+    "ActivationRecord", "ActivationTrace", "AgentAction", "AgentMessage",
+    "AgentTopology", "AuditViewSpec", "Capability", "CommunicationIntent",
+    "ComponentSpec", "CounterfactualSpec", "DatasetBundle",
+    "DetectionFinding", "DetectionMetrics", "DetectionRequest",
+    "DetectionResult", "DetectorViewSpec", "EpisodeOutcomeRequest",
+    "EpisodeSpec", "EventKind", "ExperimentContext", "ExperimentPlan",
+    "ForwardResult", "GenerationConfig", "GenerationResult", "Intervention",
+    "InformationAsset", "InformationClass", "InterventionContext",
+    "MissingCapabilityError", "ModelInput", "NodeSpec", "PairedCarrier",
     "PolicyViewSpec",
-    "RewardAction",
-    "RewardDetectionSignal",
-    "RewardRequest",
-    "ReplaySpec",
-    "SessionSpec",
-    "ThreatModelManifest",
-    "ThreatModelSpec",
-    "ToolCallIntent",
-    "ToolCallRecord",
-    "ToolRequest",
-    "ToolResult",
-    "TopologyError",
-    "TrialSpec",
+    "ProbeDataset", "ProbeExample", "ProbeInputSpec", "ProbeScore",
+    "ResearchExperimentResult", "ResolvedTensorRef", "RuntimeEvent", "Sample",
+    "ReplaySpec", "RewardAction", "RewardDetectionSignal", "RewardRequest",
+    "SampleRunRecord", "SessionSpec", "SplitPolicy", "StoredTensorRef",
+    "TensorRef", "ThreatModelManifest", "ThreatModelSpec", "ToolCallIntent",
+    "ToolCallRecord", "ToolRequest", "ToolResult", "TopologyError",
+    "TracePolicy", "TrialSpec",
 ]

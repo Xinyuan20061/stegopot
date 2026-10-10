@@ -21,6 +21,7 @@ from stegopot.infrastructure.substrates.communication import CommunicationSubstr
 from stegopot.infrastructure.substrates.transforms import BlockChannel, ReplaceChannel
 from stegopot.bootstrap.experiments.stego_components import definitions
 from stegopot.bootstrap.experiments.llm_components import definitions as llm_definitions
+from stegopot.bootstrap.experiments.model_components import definitions as model_definitions
 
 
 def _object(properties=None, required=()):
@@ -246,7 +247,7 @@ def builtin_plugin() -> PluginDefinition:
                                              "policies", "substrate"]}},
       "treatments": {"type": "array", "minItems": 1, "items": treatment},
   }, ["source", "carrier", "treatments"])
-  return PluginDefinition("core", "1.0.0", API_VERSION, (
+  return PluginDefinition("core", "2.0.0", API_VERSION, (
       ComponentDefinition("core.explicit", "scenario", lambda config, ctx: ExplicitScenario(config), explicit),
       ComponentDefinition("core.sessions", "scenario", lambda config, ctx: SessionScenario(config), sessions),
       ComponentDefinition("core.counterfactual", "scenario",
@@ -270,4 +271,4 @@ def builtin_plugin() -> PluginDefinition:
                            lambda config, ctx: DetectionPenaltyReward(**config), detection_penalty),
       ComponentDefinition("core.exact_match_outcome", "outcome_reward",
                            lambda config, ctx: ExactMatchOutcomeReward(**config), exact_match_outcome),
-  ) + definitions() + llm_definitions())
+  ) + definitions() + llm_definitions() + model_definitions())

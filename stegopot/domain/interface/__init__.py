@@ -1,63 +1,84 @@
-"""StegoPot 对实现层公开的稳定扩展接口。"""
+"""StegoPot 对后端和插件公开的稳定协议。"""
 
+from stegopot.domain.interface.channel import ChannelTransform
+from stegopot.domain.interface.codec import (
+    Carrier,
+    DecodeRequest,
+    DecodeResult,
+    EncodeRequest,
+    EncodeResult,
+    StegoCodec,
+)
+from stegopot.domain.interface.data import (
+    DatasetSource,
+    DatasetStore,
+    DatasetTransform,
+    DatasetValidator,
+)
 from stegopot.domain.interface.detector import StegoDetector
-from stegopot.domain.interface.codec import Carrier
-from stegopot.domain.interface.codec import DecodeRequest
-from stegopot.domain.interface.codec import DecodeResult
-from stegopot.domain.interface.codec import EncodeRequest
-from stegopot.domain.interface.codec import EncodeResult
-from stegopot.domain.interface.codec import StegoCodec
-from stegopot.domain.interface.experiment import Evaluator
-from stegopot.domain.interface.experiment import OutcomeRewardFunction
-from stegopot.domain.interface.experiment import RewardFunction
-from stegopot.domain.interface.experiment import ScenarioProvider
-from stegopot.domain.interface.llm import LLMClient
-from stegopot.domain.interface.llm import LLMMessage
-from stegopot.domain.interface.llm import LLMResponse
-from stegopot.domain.interface.observation import ObservationBuilder
-from stegopot.domain.interface.observation import ObservationContext
+from stegopot.domain.interface.events import EventBus, EventSink
+from stegopot.domain.interface.experiment import (
+    Evaluator,
+    OutcomeRewardFunction,
+    RewardFunction,
+    ScenarioProvider,
+)
+from stegopot.domain.interface.intervention import TensorOperator
+from stegopot.domain.interface.llm import LLMClient, LLMMessage, LLMResponse
+from stegopot.domain.interface.observation import (
+    ObservationBuilder,
+    ObservationContext,
+)
+from stegopot.domain.interface.plugin import (
+    BuildContext,
+    ComponentDefinition,
+    PluginDefinition,
+)
 from stegopot.domain.interface.policy import Policy
-from stegopot.domain.interface.stego import StegoEmbedRequest
-from stegopot.domain.interface.stego import StegoEmbedResult
-from stegopot.domain.interface.stego import StegoExtractRequest
-from stegopot.domain.interface.stego import StegoExtractResult
-from stegopot.domain.interface.stego import StegoGenerationConfig
-from stegopot.domain.interface.stego import StegoTool
-from stegopot.domain.interface.substrate import Substrate
-from stegopot.domain.interface.substrate import SubstrateEvent
-from stegopot.domain.interface.substrate import SubstrateResetContext
-from stegopot.domain.interface.substrate import SubstrateStepContext
-from stegopot.domain.interface.substrate import SubstrateStepResult
+from stegopot.domain.interface.probe import Probe, ProbeLoader
+from stegopot.domain.interface.research import (
+    Analyzer,
+    Metric,
+    Reporter,
+    ResearchScenario,
+)
+from stegopot.domain.interface.runtime import (
+    ControlledRuntime,
+    GenerationStep,
+    ModelAdapter,
+    TokenGenerationSession,
+)
+from stegopot.domain.interface.storage import ArtifactStore, TraceStore
+from stegopot.domain.interface.stego import (
+    StegoEmbedRequest,
+    StegoEmbedResult,
+    StegoExtractRequest,
+    StegoExtractResult,
+    StegoGenerationConfig,
+    StegoTool,
+)
+from stegopot.domain.interface.substrate import (
+    Substrate,
+    SubstrateEvent,
+    SubstrateResetContext,
+    SubstrateStepContext,
+    SubstrateStepResult,
+)
 from stegopot.domain.interface.tool import ToolExecutor
 
 __all__ = [
-    "Evaluator",
-    "Carrier",
-    "DecodeRequest",
-    "DecodeResult",
-    "EncodeRequest",
-    "EncodeResult",
-    "LLMClient",
-    "LLMMessage",
-    "LLMResponse",
-    "ObservationBuilder",
-    "ObservationContext",
-    "OutcomeRewardFunction",
-    "Policy",
-    "RewardFunction",
-    "ScenarioProvider",
-    "StegoDetector",
-    "StegoCodec",
-    "StegoEmbedRequest",
-    "StegoEmbedResult",
-    "StegoExtractRequest",
-    "StegoExtractResult",
-    "StegoGenerationConfig",
-    "StegoTool",
-    "Substrate",
-    "SubstrateEvent",
-    "SubstrateResetContext",
-    "SubstrateStepContext",
-    "SubstrateStepResult",
-    "ToolExecutor",
+    "Analyzer", "ArtifactStore", "BuildContext", "Carrier", "ChannelTransform",
+    "ComponentDefinition", "ControlledRuntime", "DatasetSource", "DatasetStore",
+    "DatasetTransform", "DatasetValidator", "DecodeRequest", "DecodeResult",
+    "EncodeRequest", "EncodeResult", "Evaluator", "EventBus", "EventSink",
+    "GenerationStep", "LLMClient", "LLMMessage", "LLMResponse", "Metric",
+    "ModelAdapter", "ObservationBuilder", "ObservationContext",
+    "OutcomeRewardFunction", "PluginDefinition", "Policy", "Probe",
+    "ProbeLoader", "Reporter", "ResearchScenario", "RewardFunction",
+    "ScenarioProvider", "StegoCodec", "StegoDetector", "StegoEmbedRequest",
+    "StegoEmbedResult", "StegoExtractRequest", "StegoExtractResult",
+    "StegoGenerationConfig", "StegoTool", "Substrate", "SubstrateEvent",
+    "SubstrateResetContext", "SubstrateStepContext", "SubstrateStepResult",
+    "TensorOperator",
+    "TokenGenerationSession", "ToolExecutor", "TraceStore",
 ]

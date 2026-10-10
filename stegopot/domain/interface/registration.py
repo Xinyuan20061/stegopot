@@ -60,7 +60,10 @@ class Plugin:
     self._components = []
     self._definition = None
 
-  def component(self, kind: str, name: str, *, config=None, schema=None, references=None, credentials=(), preflight=None):
+  def component(
+      self, kind: str, name: str, *, config=None, schema=None, references=None,
+      credentials=(), preflight=None, requires=(), provides=(),
+  ):
     """返回组件工厂装饰器。
 
     参数：
@@ -70,7 +73,9 @@ class Plugin:
       schema: 可选显式 JSON Schema，与 config 互斥；此时工厂收到字典。
       references: 配置字段到 llm/codec 能力的声明，工厂通过 context.resource 读取。
       credentials: 模型供应商使用的凭证字段名，值为环境变量引用而非密钥。
-      preflight: 可选纯校验函数，接收同类型配置与 PreflightContext，返回 Diagnostic 序列；不执行网络或资源构造。
+      preflight: 可选纯校验函数，接收同类型配置与 PreflightContext，返回 Diagnostic 序列。
+      requires: 组件运行要求模型适配器提供的能力。
+      provides: model_adapter 组件可以提供的能力。
     """
     if config is not None and schema is not None:
       raise ValueError("config 和 schema 不能同时提供")
@@ -91,9 +96,17 @@ class Plugin:
       def validate(value, context):
         """将 value 转为同类型参数后运行纯预检；context 不提供资源或凭证。"""
         return preflight(config(**value) if config is not None else value, context)
-      self._components.append(ComponentDefinition(component_id, kind, build, resolved,
-                                                  dict(references or {}), tuple(credentials),
-                                                  validate if preflight is not None else None))
+      self._components.append(ComponentDefinition(
+          component_id=component_id,
+          kind=kind,
+          factory=build,
+          config_schema=resolved,
+          references=dict(references or {}),
+          credentials=tuple(credentials),
+          preflight=validate if preflight is not None else None,
+          requires_capabilities=tuple(requires),
+          provides_capabilities=tuple(provides),
+      ))
       return factory
     return register
 
