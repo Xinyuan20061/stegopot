@@ -1,5 +1,6 @@
 """StegoPot 对后端和插件公开的稳定协议。"""
 
+from stegopot.domain.interface.attribution import EdgeAttributor
 from stegopot.domain.interface.channel import ChannelTransform
 from stegopot.domain.interface.codec import (
     Carrier,
@@ -70,7 +71,7 @@ __all__ = [
     "Analyzer", "ArtifactStore", "BuildContext", "Carrier", "ChannelTransform",
     "ComponentDefinition", "ControlledRuntime", "DatasetSource", "DatasetStore",
     "DatasetTransform", "DatasetValidator", "DecodeRequest", "DecodeResult",
-    "EncodeRequest", "EncodeResult", "Evaluator", "EventBus", "EventSink",
+    "EdgeAttributor", "EncodeRequest", "EncodeResult", "Evaluator", "EventBus", "EventSink",
     "GenerationStep", "LLMClient", "LLMMessage", "LLMResponse", "Metric",
     "ModelAdapter", "ObservationBuilder", "ObservationContext",
     "OutcomeRewardFunction", "PluginDefinition", "Policy", "Probe",

@@ -13,13 +13,14 @@
 - 作用域明确、异常后必清理的运行时干预；
 - 通用 Sample 的生成、变换、验证、分组切分和指纹；
 - 从 ActivationTrace 构造 Probe 数据的接口；
+- 通用 EAP 评分、排序与可复用因果归因结果；
 - Dataset -> Scenario -> Analyze -> Evaluate -> Save 生命周期；
 - 多 Agent 通信、信息投影、StegoKit、检测、奖励和审计；
 - 插件注册、依赖注入、预检、能力匹配和资源关闭。
 
 下列内容必须由外部插件或用户配置实现：
 
-- EAP、AtP、SAE、特定 Probe 训练器和归因公式；
+- EAP-IG、AtP、SAE、特定 Probe 训练器和非标准归因公式；
 - clean/corrupt、secret pair、单比特协议等实验语义；
 - 论文场景、数据内容、标签规则、指标与报告样式；
 - 特定模型架构的非通用 head/circuit 映射；
@@ -50,6 +51,18 @@ bootstrap -> application -> domain
 
 仓库只允许这四个顶层包。不要增加 `core`、`runtime`、`adapters` 等第五个物理层；
 这些概念应作为现有四层内部的逻辑子目录表达。
+
+## EAP 边界
+
+- 基础 EAP 是 StegoPot 的通用机制分析能力，不作为单个实验的私有插件。
+- EAP 实现位于 `infrastructure/integrations/eap`，与
+  `infrastructure/integrations/stegokit` 同级。
+- EAP 使用的稳定值对象和协议仍分别位于 `domain/model` 与
+  `domain/interface`，组件注册位于 `bootstrap/experiments`。
+- EAP 只负责标准 attribution 计算、排序和结果表达，不内置 secret bit、
+  counterfactual 命名、carrier、数据集划分、稳定性图表或论文结论。
+- attention head 布局、sender/receiver edge 映射和 edge-specific patching 必须由
+  明确支持该模型结构的插件或适配层提供；通用适配器不得猜测。
 
 ## 接口与能力
 

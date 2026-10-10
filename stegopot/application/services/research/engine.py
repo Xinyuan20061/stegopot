@@ -88,8 +88,22 @@ class ResearchExperimentEngine:
           status = "failed"
           failure = failure or {"type": type(exc).__name__, "message": str(exc)}
     summary = {}
+    summarized_reporters = []
+    reporter_failures = []
     for reporter in self.reporters:
-      values = dict(reporter.summarize(records, context))
+      try:
+        values = dict(reporter.summarize(records, context))
+      except Exception as exc:
+        reporter_failure = {
+            "reporter_id": reporter.reporter_id,
+            "type": type(exc).__name__,
+            "message": str(exc),
+        }
+        reporter_failures.append(reporter_failure)
+        status = "failed"
+        failure = failure or reporter_failure
+        continue
+      summarized_reporters.append(reporter)
       for key, value in values.items():
         namespaced = f"{reporter.reporter_id}.{key}"
         if namespaced in summary:
@@ -97,10 +111,12 @@ class ResearchExperimentEngine:
         summary[namespaced] = value
     if failure is not None:
       summary["failure"] = failure
+    if reporter_failures:
+      summary["reporter_failures"] = reporter_failures
     artifacts = self._save(dataset, records, summary, context, status)
     result = ResearchExperimentResult(
         context.run_id, status, records, summary, artifacts)
-    for reporter in self.reporters:
+    for reporter in summarized_reporters:
       reporter.report(result, context)
     seal = context.artifact_store.seal({
         "run_id": context.run_id, "status": status,

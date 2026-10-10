@@ -87,7 +87,9 @@ metric.backward()
 gradient = result.trace.get(policy.refs[0]).gradient
 ```
 
-StegoPot 不定义 metric、EAP 或 attribution 公式。
+StegoPot 不定义具体任务的 metric 或模型图。核心只提供基础 EAP 的统一符号约定：
+`(evaluated_source-reference_source) dot evaluated_target_gradient`，以及把显式边转换为
+真实 residual edge patch 的构造器。EAP-IG、AtP、SAE 和实验协议由插件实现。
 
 ## 干预
 

@@ -115,6 +115,10 @@ class ModelAdapter(Protocol):
     """创建逐 token 可控生成会话。"""
     ...
 
+  def clear_gradients(self) -> None:
+    """释放参数梯度；不修改模型权重或已分离的轨迹。"""
+    ...
+
   def close(self) -> None:
     """释放模型和后端资源。"""
     ...
@@ -145,6 +149,10 @@ class ControlledRuntime(Protocol):
 
   def register(self, intervention: Intervention) -> Callable[[], None]:
     """注册跨调用生效的干预并返回取消函数。"""
+    ...
+
+  def clear_gradients(self) -> None:
+    """释放后端参数梯度，供重复白盒实验控制显存。"""
     ...
 
   def close(self) -> None:

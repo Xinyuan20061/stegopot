@@ -19,8 +19,8 @@
 </p>
 
 StegoPot 统一了可控模型执行、内部状态访问、数据组织、多 Agent 交互、隐写基础能力和
-实验生命周期。核心不实现某篇论文的算法；用户通过配置和独立插件定义数据、协议、
-Probe、归因方法、指标与场景。
+实验生命周期。核心不实现某篇论文的完整实验协议；用户通过配置和独立插件定义数据、
+协议、Probe、高级归因方法、指标与场景。
 
 ## 可以做什么
 
@@ -32,6 +32,7 @@ Probe、归因方法、指标与场景。
 | 基础干预 | Replace、Zero、Scale、Add、Interpolate 和条件触发 |
 | 数据流水线 | Source -> Transform -> Validate -> 分组切分 -> 指纹与存储 |
 | Probe 接口 | 从任意层 ActivationTrace 构造训练/评估数据；算法由插件提供 |
+| 因果归因 | 内置基础 EAP 评分、显式边定义与 residual edge patch 构造器 |
 | 通用实验 | Dataset -> Scenario -> Analyze -> Evaluate -> Save |
 | 多 Agent | 自定义节点、角色、有向拓扑、信道、检测、奖励和连续 Episode |
 | 模型接入 | Hugging Face 白盒适配器与 Chat Completions 黑盒客户端并存 |
@@ -39,8 +40,9 @@ Probe、归因方法、指标与场景。
 | 插件系统 | 严格 schema、装饰器注册、依赖注入、capability 预检 |
 | 可复现工件 | 配置、环境、插件、输出、指标、张量引用和 SHA-256 封印 |
 
-以下内容刻意不在核心中：EAP、SAE、特定 Probe 训练器、clean/corrupt Pair、单比特
-协议、论文场景和预置实验。它们应作为插件组合底层能力。
+以下内容刻意不在核心中：EAP-IG、AtP、SAE、特定 Probe 训练器、clean/corrupt
+Pair、单比特协议、论文场景和预置实验。它们应作为插件组合底层能力。核心 EAP 只实现
+与任务无关的一阶边评分和 edge patch，不猜测模型计算图或实验语义。
 
 ## 架构
 
@@ -93,6 +95,7 @@ adapter = HuggingFaceAdapter(
     model_path="D:/Models/your-causal-lm",
     revision="fixed-revision",
     local_files_only=True,
+    parameter_gradients=False,
 )
 runtime = ModelRuntime(adapter)
 
@@ -104,6 +107,21 @@ result = runtime.forward(
 print(result.trace.get(ref).shape)
 runtime.close()
 ```
+
+`parameter_gradients=False` 会冻结模型参数，但仍从输入嵌入建立激活计算图，适合 EAP、
+activation patching 和 Probe 数据采集。需要训练模型参数时保持默认值 `True`。
+
+## 基础 EAP
+
+`core.eap` 接收插件或配置显式声明的 writer-reader 边，并计算：
+
+```text
+(evaluated_source - reference_source) · evaluated_target_gradient
+```
+
+返回值估计 `evaluated_metric - patched_metric`。`build_edge_patch()` 可把候选边转换为真实
+干预，用精确前向验证排名。模型专用图、配对数据、可微 metric、行为门槛、随机基线和
+稳定性统计仍由实验插件定义，避免核心绑定 Qwen、秘密位或某篇论文。
 
 梯度、干预和逐 token 会话见 [运行时内核](docs/kernel.md)。
 

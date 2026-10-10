@@ -73,6 +73,7 @@ def build_scenario(config, context):
 - `resolve(TensorRef)`；
 - `forward(...)`；
 - `open_generation_session(...)`；
+- `clear_gradients()`；
 - `close()`。
 
 适配器只处理后端结构、张量和生成控制。归因公式、Probe 训练和实验标签不应写进适配器。

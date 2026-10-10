@@ -22,6 +22,7 @@ from stegopot.infrastructure.substrates.transforms import BlockChannel, ReplaceC
 from stegopot.bootstrap.experiments.stego_components import definitions
 from stegopot.bootstrap.experiments.llm_components import definitions as llm_definitions
 from stegopot.bootstrap.experiments.model_components import definitions as model_definitions
+from stegopot.bootstrap.experiments.eap_components import definitions as eap_definitions
 
 
 def _object(properties=None, required=()):
@@ -271,4 +272,4 @@ def builtin_plugin() -> PluginDefinition:
                            lambda config, ctx: DetectionPenaltyReward(**config), detection_penalty),
       ComponentDefinition("core.exact_match_outcome", "outcome_reward",
                            lambda config, ctx: ExactMatchOutcomeReward(**config), exact_match_outcome),
-  ) + definitions() + llm_definitions() + model_definitions())
+  ) + definitions() + llm_definitions() + model_definitions() + eap_definitions())

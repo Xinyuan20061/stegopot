@@ -1,6 +1,12 @@
 """StegoPot 的稳定领域对象。"""
 
 from stegopot.domain.model.action import AgentAction
+from stegopot.domain.model.attribution import (
+    EAPEdge,
+    EAPObservation,
+    EAPResult,
+    EAPScore,
+)
 from stegopot.domain.model.capability import Capability, MissingCapabilityError
 from stegopot.domain.model.context import (
     ExperimentContext,
@@ -81,8 +87,9 @@ __all__ = [
     "AgentTopology", "AuditViewSpec", "Capability", "CommunicationIntent",
     "ComponentSpec", "CounterfactualSpec", "DatasetBundle",
     "DetectionFinding", "DetectionMetrics", "DetectionRequest",
-    "DetectionResult", "DetectorViewSpec", "EpisodeOutcomeRequest",
-    "EpisodeSpec", "EventKind", "ExperimentContext", "ExperimentPlan",
+    "DetectionResult", "DetectorViewSpec", "EAPEdge", "EAPObservation",
+    "EAPResult", "EAPScore", "EpisodeOutcomeRequest", "EpisodeSpec",
+    "EventKind", "ExperimentContext", "ExperimentPlan",
     "ForwardResult", "GenerationConfig", "GenerationResult", "Intervention",
     "InformationAsset", "InformationClass", "InterventionContext",
     "MissingCapabilityError", "ModelInput", "NodeSpec", "PairedCarrier",

@@ -38,6 +38,10 @@ def definitions() -> tuple[ComponentDefinition, ...]:
           "use_safetensors": {
               "type": "boolean", "default": True,
               "description": "是否优先加载 safetensors 权重。"},
+          "parameter_gradients": {
+              "type": "boolean", "default": True,
+              "description": (
+                  "反向传播时是否计算参数梯度；纯激活审计建议关闭以节省显存。")},
       },
   }
 

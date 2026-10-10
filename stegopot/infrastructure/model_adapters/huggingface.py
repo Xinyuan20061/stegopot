@@ -49,7 +49,8 @@ class HuggingFaceAdapter:
       self, model_path: str | None = None, *, tokenizer_path: str | None = None,
       revision: str | None = None, device: str = "auto", dtype: str = "auto",
       trust_remote_code: bool = False, local_files_only: bool = True,
-      use_safetensors: bool = True, model: Any | None = None,
+      use_safetensors: bool = True, parameter_gradients: bool = True,
+      model: Any | None = None,
       tokenizer: Any | None = None, trace_store: TraceStore | None = None,
   ) -> None:
     """加载或接收模型。
@@ -63,6 +64,8 @@ class HuggingFaceAdapter:
       trust_remote_code: 是否允许执行模型仓库代码，默认关闭。
       local_files_only: 是否禁止运行时下载，默认开启。
       use_safetensors: 是否优先使用 safetensors 权重。
+      parameter_gradients: 反向传播时是否同时计算参数梯度。关闭后仍可读取
+        激活梯度，但会显著降低白盒审计的显存占用。
       model: 测试或嵌入场景注入的 PyTorch 模型。
       tokenizer: 与 model 配套的 tokenizer。
       trace_store: TracePolicy.store=disk 时使用的外部张量存储。
@@ -80,6 +83,9 @@ class HuggingFaceAdapter:
     self._tokenizer = tokenizer
     self._trace_store = trace_store
     self._model.eval()
+    self._input_gradient_handle = None
+    if not parameter_gradients:
+      self._disable_parameter_gradients()
     self._modules = dict(self._model.named_modules())
     self._layer_root = self._find_layer_root()
     self._model_id = str(
@@ -275,9 +281,37 @@ class HuggingFaceAdapter:
         self, _token_ids(encoded["input_ids"]), config, policy,
         tuple(interventions), run_id, event_sink)
 
+  def clear_gradients(self) -> None:
+    """用 set_to_none 释放参数梯度，不修改权重。"""
+    self._ensure_open()
+    self._model.zero_grad(set_to_none=True)
+
   def close(self) -> None:
     """释放适配器持有的模型引用。"""
+    if self._input_gradient_handle is not None:
+      self._input_gradient_handle.remove()
+      self._input_gradient_handle = None
     self._closed = True
+
+  def _disable_parameter_gradients(self) -> None:
+    """冻结参数，并从输入嵌入建立仅供激活审计使用的计算图。"""
+    get_embeddings = getattr(self._model, "get_input_embeddings", None)
+    if not callable(get_embeddings):
+      raise TypeError("parameter_gradients=False 要求模型实现 get_input_embeddings()")
+    embeddings = get_embeddings()
+    if embeddings is None:
+      raise TypeError("模型没有可用于激活梯度的输入嵌入模块")
+    self._model.requires_grad_(False)
+
+    def require_output_gradient(_module: Any, _inputs: Any, output: Any) -> Any:
+      """把嵌入输出设为计算图叶节点，使后续激活可获得梯度。"""
+      if not self._torch.is_tensor(output):
+        raise TypeError("输入嵌入模块输出必须是 PyTorch Tensor")
+      output.requires_grad_(True)
+      return output
+
+    self._input_gradient_handle = embeddings.register_forward_hook(
+        require_output_gradient)
 
   def _policy_refs(self, policy: TracePolicy) -> tuple[TensorRef, ...]:
     """将显式或 full 采集策略展开为有限引用。"""
@@ -336,10 +370,12 @@ class HuggingFaceAdapter:
       method = getattr(self._tokenizer, "apply_chat_template", None)
       if not callable(method):
         raise ValueError("当前 tokenizer 不支持 messages 输入")
-      ids = method(
+      rendered = method(
           value.payload, tokenize=True, add_generation_prompt=True,
           return_tensors="pt")
-      encoded = {"input_ids": ids}
+      encoded = (
+          dict(rendered) if isinstance(rendered, Mapping)
+          else {"input_ids": rendered})
     else:
       encoded = dict(self._tokenizer(value.payload, return_tensors="pt"))
     if "input_ids" not in encoded:

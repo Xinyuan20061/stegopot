@@ -14,8 +14,8 @@ StegoPot Core
   + Plugin and Audit Contracts
 ```
 
-具体实验由配置和外部插件组成。核心不知道 EAP、秘密比特、clean/corrupt、线性 Probe
-或某篇论文场景的含义。
+具体实验由配置和外部插件组成。核心提供通用 EAP 基础实现，但不知道秘密比特、
+clean/corrupt、carrier、线性 Probe 或某篇论文场景的含义。
 
 ## 四层目录
 
@@ -35,7 +35,7 @@ stegopot/
   infrastructure/
     model_adapters/ Hugging Face 可控模型适配
     llm/            Chat Completions 黑盒客户端与 Agent 策略
-    integrations/   StegoKit 集成
+    integrations/   StegoKit、EAP 等核心能力集成
     storage/        实验工件和磁盘张量
     plugins/        已安装插件发现
     recorders/      多 Agent 审计
@@ -62,10 +62,11 @@ stegopot/
 2. `ModelRuntime`：统一检查能力、合并干预并管理后端生命周期。
 3. `TensorRef`：统一定位 module/layer/component/token。
 4. `ActivationTrace`：保存选择性激活和可选梯度。
-5. `Intervention`：把外部算子绑定到目标与可选条件。
-6. `Sample` / `DatasetBundle`：不包含实验特定语义的数据边界。
-7. `ResearchScenario`：定义一个样本如何发生。
-8. `ComponentDefinition`：插件工厂、依赖、凭证和 capability 声明。
+5. `EAP`：根据显式 source delta、target gradient 与 edge 定义计算通用归因。
+6. `Intervention`：把外部算子绑定到目标与可选条件。
+7. `Sample` / `DatasetBundle`：不包含实验特定语义的数据边界。
+8. `ResearchScenario`：定义一个样本如何发生。
+9. `ComponentDefinition`：插件工厂、依赖、凭证和 capability 声明。
 
 ## 两条执行链
 
@@ -106,7 +107,7 @@ Config v1
 - PyTorch/Transformers 是 `whitebox` 可选依赖。
 - 默认只采集显式 TensorRef；不默认保存所有层。
 - Trace 可留在设备、转 CPU 或写外部 TraceStore。
-- EAP、Probe 模型、SAE 和论文协议不随核心安装。
+- 基础 EAP 随核心安装；EAP-IG、AtP、Probe 模型、SAE 和论文协议由插件提供。
 - 只有 `FileArtifactStore`、基础张量算子和 Hugging Face 适配器作为参考实现。
 
 ## 信任边界

@@ -105,6 +105,7 @@ from stegopot.infrastructure.model_adapters import HuggingFaceAdapter
 adapter = HuggingFaceAdapter(
     model_path="D:/Models/your-causal-lm",
     local_files_only=True,
+    parameter_gradients=False,
 )
 runtime = ModelRuntime(adapter)
 ref = TensorRef(layer=12, component="resid_post", token=-1)
@@ -115,6 +116,9 @@ result = runtime.forward(
 print(result.trace.get(ref).shape)
 runtime.close()
 ```
+
+纯激活审计建议设置 `parameter_gradients=False`。该模式不为模型参数分配梯度，但仍支持
+选定 activation 的 backward 和梯度读取，可显著降低 EAP 等实验的显存占用。
 
 ## v1 多 Agent 配置
 

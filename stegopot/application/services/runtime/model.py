@@ -106,6 +106,12 @@ class ModelRuntime:
         inputs, config=config, policy=resolved_policy, interventions=active,
         run_id=run_id or f"generation-{uuid4().hex}", event_sink=self.event_bus)
 
+  def clear_gradients(self) -> None:
+    """释放后端参数梯度，同时保留模型权重和已分离工件。"""
+    self._ensure_open()
+    self.require((Capability.GRADIENT_READ,))
+    self.adapter.clear_gradients()
+
   def close(self) -> None:
     """清除注册干预并按所有权关闭 Adapter。"""
     with self._lock:
