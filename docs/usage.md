@@ -106,6 +106,8 @@ adapter = HuggingFaceAdapter(
     model_path="D:/Models/your-causal-lm",
     local_files_only=True,
     parameter_gradients=False,
+    quantization="bnb_4bit",
+    bnb_4bit_compute_dtype="bfloat16",
 )
 runtime = ModelRuntime(adapter)
 ref = TensorRef(layer=12, component="resid_post", token=-1)
@@ -119,6 +121,8 @@ runtime.close()
 
 纯激活审计建议设置 `parameter_gradients=False`。该模式不为模型参数分配梯度，但仍支持
 选定 activation 的 backward 和梯度读取，可显著降低 EAP 等实验的显存占用。
+`quantization="bnb_4bit"` 需要安装 `stegopot[quantized]`。量化是资源折中，不是与
+全精度模型等价的科学条件；报告中应固定 quantization、quant type 和 compute dtype。
 
 ## v1 多 Agent 配置
 

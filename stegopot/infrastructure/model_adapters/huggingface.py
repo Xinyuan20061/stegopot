@@ -50,6 +50,9 @@ class HuggingFaceAdapter:
       revision: str | None = None, device: str = "auto", dtype: str = "auto",
       trust_remote_code: bool = False, local_files_only: bool = True,
       use_safetensors: bool = True, parameter_gradients: bool = True,
+      quantization: str = "none", bnb_4bit_compute_dtype: str = "bfloat16",
+      bnb_4bit_quant_type: str = "nf4",
+      bnb_4bit_use_double_quant: bool = True,
       model: Any | None = None,
       tokenizer: Any | None = None, trace_store: TraceStore | None = None,
   ) -> None:
@@ -66,6 +69,10 @@ class HuggingFaceAdapter:
       use_safetensors: 是否优先使用 safetensors 权重。
       parameter_gradients: 反向传播时是否同时计算参数梯度。关闭后仍可读取
         激活梯度，但会显著降低白盒审计的显存占用。
+      quantization: 权重量化方式；支持 none、bnb_4bit 或 bnb_8bit。
+      bnb_4bit_compute_dtype: 4-bit 矩阵计算精度。
+      bnb_4bit_quant_type: 4-bit 权重编码；支持 nf4 或 fp4。
+      bnb_4bit_use_double_quant: 是否对量化常数再次量化以降低显存。
       model: 测试或嵌入场景注入的 PyTorch 模型。
       tokenizer: 与 model 配套的 tokenizer。
       trace_store: TracePolicy.store=disk 时使用的外部张量存储。
@@ -78,7 +85,9 @@ class HuggingFaceAdapter:
         raise ValueError("未注入模型时必须提供 model_path")
       model, tokenizer = self._load(
           model_path, tokenizer_path, revision, device, dtype,
-          trust_remote_code, local_files_only, use_safetensors)
+          trust_remote_code, local_files_only, use_safetensors,
+          quantization, bnb_4bit_compute_dtype, bnb_4bit_quant_type,
+          bnb_4bit_use_double_quant)
     self._model = model
     self._tokenizer = tokenizer
     self._trace_store = trace_store
@@ -393,11 +402,17 @@ class HuggingFaceAdapter:
 
   def _load(
       self, model_path, tokenizer_path, revision, device, dtype,
-      trust_remote_code, local_files_only, use_safetensors,
+      trust_remote_code, local_files_only, use_safetensors, quantization,
+      bnb_4bit_compute_dtype, bnb_4bit_quant_type,
+      bnb_4bit_use_double_quant,
   ):
     """惰性导入 Transformers 并加载本地或显式允许的模型。"""
     try:
-      from transformers import AutoModelForCausalLM, AutoTokenizer
+      from transformers import (
+          AutoModelForCausalLM,
+          AutoTokenizer,
+          BitsAndBytesConfig,
+      )
     except ImportError as exc:
       raise RuntimeError("使用 HuggingFaceAdapter 需要安装 stegopot[whitebox]") from exc
     dtype_value = {
@@ -406,15 +421,41 @@ class HuggingFaceAdapter:
     }.get(dtype)
     if dtype_value is None:
       raise ValueError("dtype 只支持 auto、float32、float16、bfloat16")
+    if quantization not in {"none", "bnb_4bit", "bnb_8bit"}:
+      raise ValueError("quantization 只支持 none、bnb_4bit、bnb_8bit")
+    compute_dtype = {
+        "float32": self._torch.float32,
+        "float16": self._torch.float16,
+        "bfloat16": self._torch.bfloat16,
+    }.get(bnb_4bit_compute_dtype)
+    if compute_dtype is None:
+      raise ValueError(
+          "bnb_4bit_compute_dtype 只支持 float32、float16、bfloat16")
+    if bnb_4bit_quant_type not in {"nf4", "fp4"}:
+      raise ValueError("bnb_4bit_quant_type 只支持 nf4 或 fp4")
     common = {
         "revision": revision, "trust_remote_code": trust_remote_code,
         "local_files_only": local_files_only,
     }
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path or model_path, **common)
+    load_options = {
+        "torch_dtype": dtype_value,
+        "use_safetensors": use_safetensors,
+    }
+    if quantization == "bnb_4bit":
+      load_options["quantization_config"] = BitsAndBytesConfig(
+          load_in_4bit=True,
+          bnb_4bit_compute_dtype=compute_dtype,
+          bnb_4bit_quant_type=bnb_4bit_quant_type,
+          bnb_4bit_use_double_quant=bool(bnb_4bit_use_double_quant),
+      )
+    elif quantization == "bnb_8bit":
+      load_options["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+    if quantization != "none":
+      load_options["device_map"] = "auto" if device == "auto" else {"": device}
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, torch_dtype=dtype_value, use_safetensors=use_safetensors,
-        **common)
-    if device != "auto":
+        model_path, **load_options, **common)
+    if quantization == "none" and device != "auto":
       model.to(device)
     return model, tokenizer
 

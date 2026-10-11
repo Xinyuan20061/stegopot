@@ -21,6 +21,13 @@ whitebox = [
   "transformers>=4.40",
   "safetensors>=0.4",
 ]
+quantized = [
+  "torch>=2.4",
+  "transformers>=4.40",
+  "safetensors>=0.4",
+  "accelerate>=1.0",
+  "bitsandbytes>=0.45",
+]
 stego = [
   "numpy>=1.24",
   "torch>=2.1",

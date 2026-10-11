@@ -96,6 +96,9 @@ adapter = HuggingFaceAdapter(
     revision="fixed-revision",
     local_files_only=True,
     parameter_gradients=False,
+    # 8GB 显存运行 7B 白盒实验时可显式选择 bitsandbytes NF4。
+    quantization="bnb_4bit",
+    bnb_4bit_compute_dtype="bfloat16",
 )
 runtime = ModelRuntime(adapter)
 
@@ -110,6 +113,7 @@ runtime.close()
 
 `parameter_gradients=False` 会冻结模型参数，但仍从输入嵌入建立激活计算图，适合 EAP、
 activation patching 和 Probe 数据采集。需要训练模型参数时保持默认值 `True`。
+量化模型的机制可能与全精度权重不同；实验清单必须记录量化方式，并对关键结论做跨精度复核。
 
 ## 基础 EAP
 

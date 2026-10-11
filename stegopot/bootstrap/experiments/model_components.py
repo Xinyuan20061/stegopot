@@ -42,6 +42,19 @@ def definitions() -> tuple[ComponentDefinition, ...]:
               "type": "boolean", "default": True,
               "description": (
                   "反向传播时是否计算参数梯度；纯激活审计建议关闭以节省显存。")},
+          "quantization": {
+              "enum": ["none", "bnb_4bit", "bnb_8bit"], "default": "none",
+              "description": "可选 bitsandbytes 权重量化方式。"},
+          "bnb_4bit_compute_dtype": {
+              "enum": ["float32", "float16", "bfloat16"],
+              "default": "bfloat16",
+              "description": "bnb_4bit 的矩阵计算精度。"},
+          "bnb_4bit_quant_type": {
+              "enum": ["nf4", "fp4"], "default": "nf4",
+              "description": "bnb_4bit 的权重编码格式。"},
+          "bnb_4bit_use_double_quant": {
+              "type": "boolean", "default": True,
+              "description": "是否启用嵌套量化以进一步降低显存占用。"},
       },
   }
 
@@ -63,6 +76,12 @@ def definitions() -> tuple[ComponentDefinition, ...]:
           "runtime.revision_unpinned", context.path + ".revision",
           "模型没有声明固定 revision",
           "填写提交哈希或记录本地模型摘要", severity="warning"))
+    if config.get("quantization", "none") != "none":
+      issues.append(Diagnostic(
+          "runtime.quantized_weights", context.path + ".quantization",
+          "白盒运行使用量化权重，内部机制可能不同于全精度模型",
+          "报告量化方法，并用全精度或另一量化方案复核关键结论",
+          severity="warning"))
     return tuple(issues)
 
   capabilities = tuple(Capability)

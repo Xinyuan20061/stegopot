@@ -4,6 +4,8 @@
 .venv/
 .idea/
 .vscode/
+.autodl-remote/
+.autodl-remote.conf
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -13,8 +15,14 @@ artifacts/
 captures/
 representations/
 outputs/
-# 本地实验工作区包含配置、插件、数据集与结果，不进入框架仓库。
-/experiments/
+# 可复用模型资源只缓存在本地，仓库仅提交目录说明。
+/models_cache/**
+!/models_cache/README.md
+# 兼容旧版本地模型目录，防止误提交大体积权重。
+/models/
+# 本地实验工作区包含配置、插件、数据集与结果，仓库仅提交目录说明。
+/experiments/**
+!/experiments/README.md
 # 分析配置可能包含中央秘密标签，只保留在本地研究工作区。
 /analyses/**
 # 用户配置只保留在本地，仓库仅提交目录说明。
