@@ -2,11 +2,11 @@
 
 ## 组件类型
 
-插件 API 1.5 同时服务两种配置：
+插件 API 1.6 同时服务两种配置：
 
 | 类别 | kind |
 | --- | --- |
-| 通用研究 | `model_adapter`、`dataset`、`transform`、`validator`、`scenario`、`analyzer`、`probe`、`intervention`、`metric`、`reporter` |
+| 通用研究 | `model_adapter`、`dataset`、`transform`、`validator`、`scenario`、`analyzer`、`probe`、`sae`、`intervention`、`metric`、`reporter` |
 | 多 Agent | `scenario`、`policy`、`llm`、`substrate`、`channel`、`codec`、`detector`、`reward`、`outcome_reward`、`evaluator`、`tool`、`audit` |
 
 v1 的 `scenario` 实现 `plan(seed)`；v2 的 `scenario` 实现 `setup/run/teardown`。
@@ -62,6 +62,22 @@ def build_scenario(config, context):
 配置字段 `probe` 的值是 `resources` 中的资源名。工厂只能读取自己声明的 slot。
 循环引用、类型不匹配和缺失资源在执行前失败。
 
+公开 SAE 使用相同的资源注入规则：
+
+```python
+@plugin.component(
+    "analyzer",
+    "feature_method",
+    references={"sae": "sae"},
+    requires=(Capability.ACTIVATION_READ,),
+)
+def build_feature_method(config, context):
+  return FeatureAnalyzer(sae=context.resource("sae"), **config)
+```
+
+使用者可在配置中选择内置 `core.saelens` 或实现相同 `SAEModel` 契约的第三方 `sae`
+组件。实验插件不得依赖 `SAELensLoader` 具体类。
+
 只有 `llm`、`model_adapter` 和 `tool` 能声明 `credentials`。配置填写环境变量名，
 工厂使用 `context.credential(field_name)` 取得单个值，不能读取完整环境。
 
@@ -108,7 +124,7 @@ dependencies = ["stegopot>=2,<3"]
 my_study = "my_study.bootstrap:plugin"
 ```
 
-entry point 名、`plugin_id` 和安装包声明必须一致。StegoPot 2.0 保持插件 API 1.x
+entry point 名、`plugin_id` 和安装包声明必须一致。StegoPot 2.x 保持插件 API 1.x
 向后兼容；插件不应假设所有模型后端都有白盒能力。
 
 ## 生命周期约定

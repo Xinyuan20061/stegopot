@@ -9,7 +9,7 @@ from stegopot.infrastructure.model_adapters.huggingface import HuggingFaceAdapte
 
 def definitions() -> tuple[ComponentDefinition, ...]:
   """返回唯一内置白盒后端；其他模型生态由外部插件实现。"""
-  registry = Plugin("core", "2.0.0")
+  registry = Plugin("core", "2.1.0")
   schema = {
       "type": "object", "additionalProperties": False,
       "required": ["model_path"],

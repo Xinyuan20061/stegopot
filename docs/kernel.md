@@ -89,7 +89,8 @@ gradient = result.trace.get(policy.refs[0]).gradient
 
 StegoPot 不定义具体任务的 metric 或模型图。核心只提供基础 EAP 的统一符号约定：
 `(evaluated_source-reference_source) dot evaluated_target_gradient`，以及把显式边转换为
-真实 residual edge patch 的构造器。EAP-IG、AtP、SAE 和实验协议由插件实现。
+真实 residual edge patch 的构造器。EAP-IG、AtP 和实验协议由插件实现；公开 SAE 的
+加载、重构测量与特征干预由基础集成提供，特征选择和解释仍属于实验插件。
 
 ## 干预
 
@@ -113,6 +114,19 @@ changed = runtime.forward(
 `observe + condition` 可组成在线条件干预。条件只获得观察张量和最小
 `InterventionContext`；具体 Probe 或检测策略由插件实现。算子返回值必须与目标选择的
 shape、dtype 和 device 完全一致。
+
+## SAE 特征干预
+
+`core.saelens` 提供统一的 `SAEModel`。`SAEFeatureInterventionOperator` 在特征空间执行
+`zero`、`set`、`scale` 或 `add`，并默认使用以下形式保留 SAE 重构误差：
+
+```text
+x_intervened = x + decode(z_intervened) - decode(encode(x))
+```
+
+实验插件负责把 SAE 的 `hook_name` 显式映射到模型 `TensorRef`，并使用
+`build_sae_feature_intervention()` 构造运行时干预。核心不会根据字符串名称猜测层位置。
+完整示例见 [SAE 集成](sae.md)。
 
 ## 逐 Token Generation
 

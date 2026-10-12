@@ -11,10 +11,10 @@
 <p align="center"><strong>面向 LLM 隐写与多智能体研究的可控实验底座</strong></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0.0-2F81F7?style=flat-square" alt="Version 2.0.0">
+  <img src="https://img.shields.io/badge/version-2.1.0-2F81F7?style=flat-square" alt="Version 2.1.0">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/PyTorch-optional-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch optional">
-  <img src="https://img.shields.io/badge/plugin%20API-1.5-4B5563?style=flat-square" alt="Plugin API 1.5">
+  <img src="https://img.shields.io/badge/plugin%20API-1.6-4B5563?style=flat-square" alt="Plugin API 1.6">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-D22128?style=flat-square" alt="Apache-2.0 License"></a>
 </p>
 
@@ -33,6 +33,7 @@ StegoPot 统一了可控模型执行、内部状态访问、数据组织、多 A
 | 数据流水线 | Source -> Transform -> Validate -> 分组切分 -> 指纹与存储 |
 | Probe 接口 | 从任意层 ActivationTrace 构造训练/评估数据；算法由插件提供 |
 | 因果归因 | 内置基础 EAP 评分、显式边定义与 residual edge patch 构造器 |
+| 稀疏特征 | 加载公开 SAE、兼容性清单、重构评估和特征空间因果干预 |
 | 通用实验 | Dataset -> Scenario -> Analyze -> Evaluate -> Save |
 | 多 Agent | 自定义节点、角色、有向拓扑、信道、检测、奖励和连续 Episode |
 | 模型接入 | Hugging Face 白盒适配器与 Chat Completions 黑盒客户端并存 |
@@ -40,9 +41,9 @@ StegoPot 统一了可控模型执行、内部状态访问、数据组织、多 A
 | 插件系统 | 严格 schema、装饰器注册、依赖注入、capability 预检 |
 | 可复现工件 | 配置、环境、插件、输出、指标、张量引用和 SHA-256 封印 |
 
-以下内容刻意不在核心中：EAP-IG、AtP、SAE、特定 Probe 训练器、clean/corrupt
-Pair、单比特协议、论文场景和预置实验。它们应作为插件组合底层能力。核心 EAP 只实现
-与任务无关的一阶边评分和 edge patch，不猜测模型计算图或实验语义。
+以下内容刻意不在核心中：SAE 训练、任务特定的特征筛选与解释、EAP-IG、AtP、特定
+Probe 训练器、clean/corrupt Pair、单比特协议、论文场景和预置实验。它们应作为插件组合
+底层能力。核心 SAE 与 EAP 只提供可复用机制，不猜测模型计算图、秘密语义或论文结论。
 
 ## 架构
 
@@ -83,6 +84,12 @@ StegoKit：
 
 ```powershell
 python -m pip install -e ".[stego]"
+```
+
+公开 SAE：
+
+```powershell
+python -m pip install -e ".[sae]"
 ```
 
 ## 可控模型 API
@@ -128,6 +135,30 @@ activation patching 和 Probe 数据采集。需要训练模型参数时保持�
 稳定性统计仍由实验插件定义，避免核心绑定 Qwen、秘密位或某篇论文。
 
 梯度、干预和逐 token 会话见 [运行时内核](docs/kernel.md)。
+
+## 公开 SAE
+
+`core.saelens` 将 SAE Lens 的公开 release 或本地权重加载为统一 `SAEModel` 资源。它会
+保存 `SAEManifest`，并可严格核对基础模型 ID、hook 名、输入宽度和特征宽度。核心同时
+提供重构质量测量及 `zero/set/scale/add` 特征干预；特征搜索、标签解释、统计检验和论文
+实验协议仍由外部实验插件实现。
+
+```yaml
+resources:
+  layer_sae:
+    type: core.saelens
+    config:
+      source: your-saelens-release
+      sae_id: your-sae-id
+      device: cuda
+      dtype: bfloat16
+      expected_model_id: your/model-id
+      expected_hook_name: your/hook-name
+      expected_input_width: 3584
+```
+
+外部 Analyzer 或 Scenario 通过 `references={"sae": "sae"}` 获得该资源。完整边界、
+验证步骤和插件示例见 [SAE 集成](docs/sae.md)。
 
 ## 配置运行
 
@@ -230,6 +261,7 @@ outputs/<run-id>/
 
 - [架构](docs/architecture.md)
 - [运行时内核](docs/kernel.md)
+- [SAE 集成](docs/sae.md)
 - [使用指南](docs/usage.md)
 - [插件开发](docs/plugin_development.md)
 - [威胁模型](docs/threat_model.md)

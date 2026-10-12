@@ -62,6 +62,12 @@ from stegopot.domain.model.runtime import (
     GenerationResult,
     ModelInput,
 )
+from stegopot.domain.model.sae import (
+    SAECompatibilityError,
+    SAEFeatureRef,
+    SAEManifest,
+    SAEReconstructionReport,
+)
 from stegopot.domain.model.topology import AgentTopology, TopologyError
 from stegopot.domain.model.tool import (
     ToolCallIntent,
@@ -97,7 +103,8 @@ __all__ = [
     "ProbeDataset", "ProbeExample", "ProbeInputSpec", "ProbeScore",
     "ResearchExperimentResult", "ResolvedTensorRef", "RuntimeEvent", "Sample",
     "ReplaySpec", "RewardAction", "RewardDetectionSignal", "RewardRequest",
-    "SampleRunRecord", "SessionSpec", "SplitPolicy", "StoredTensorRef",
+    "SAECompatibilityError", "SAEFeatureRef", "SAEManifest",
+    "SAEReconstructionReport", "SampleRunRecord", "SessionSpec", "SplitPolicy", "StoredTensorRef",
     "TensorRef", "ThreatModelManifest", "ThreatModelSpec", "ToolCallIntent",
     "ToolCallRecord", "ToolRequest", "ToolResult", "TopologyError",
     "TracePolicy", "TrialSpec",

@@ -49,6 +49,7 @@ from stegopot.domain.interface.runtime import (
     ModelAdapter,
     TokenGenerationSession,
 )
+from stegopot.domain.interface.sae import SAEModel
 from stegopot.domain.interface.storage import ArtifactStore, TraceStore
 from stegopot.domain.interface.stego import (
     StegoEmbedRequest,
@@ -76,7 +77,7 @@ __all__ = [
     "ModelAdapter", "ObservationBuilder", "ObservationContext",
     "OutcomeRewardFunction", "PluginDefinition", "Policy", "Probe",
     "ProbeLoader", "Reporter", "ResearchScenario", "RewardFunction",
-    "ScenarioProvider", "StegoCodec", "StegoDetector", "StegoEmbedRequest",
+    "SAEModel", "ScenarioProvider", "StegoCodec", "StegoDetector", "StegoEmbedRequest",
     "StegoEmbedResult", "StegoExtractRequest", "StegoExtractResult",
     "StegoGenerationConfig", "StegoTool", "Substrate", "SubstrateEvent",
     "SubstrateResetContext", "SubstrateStepContext", "SubstrateStepResult",

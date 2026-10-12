@@ -40,7 +40,7 @@ def _tensor_ref_schema() -> dict:
 
 def definitions() -> tuple[ComponentDefinition, ...]:
   """返回可由 schema_version=2 配置调用的基础 EAP Analyzer。"""
-  registry = Plugin("core", "2.0.0")
+  registry = Plugin("core", "2.1.0")
   edge = {
       "type": "object", "additionalProperties": False,
       "required": ["id", "source", "target"],

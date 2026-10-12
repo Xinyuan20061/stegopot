@@ -11,12 +11,12 @@ from stegopot.domain.model.diagnostic import Diagnostic, PreflightContext
 from stegopot.domain.model.experiment import validate_id
 
 
-API_VERSION = "1.5"
+API_VERSION = "1.6"
 COMPONENT_KINDS = frozenset({
     "scenario", "policy", "llm", "model_adapter", "substrate", "channel",
     "codec", "detector", "reward", "outcome_reward", "evaluator", "tool",
     "audit", "dataset", "transform", "validator", "analyzer", "probe",
-    "intervention", "metric", "reporter", "protocol", "agent",
+    "intervention", "metric", "reporter", "protocol", "agent", "sae",
 })
 
 

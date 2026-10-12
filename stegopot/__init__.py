@@ -12,12 +12,19 @@ from stegopot.domain.model.data import DatasetBundle, Sample, SplitPolicy
 from stegopot.domain.model.intervention_runtime import Intervention
 from stegopot.domain.model.reference import TensorRef, TracePolicy
 from stegopot.domain.model.runtime import GenerationConfig, ModelInput
+from stegopot.domain.model.sae import (
+    SAECompatibilityError,
+    SAEFeatureRef,
+    SAEManifest,
+    SAEReconstructionReport,
+)
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 __all__ = [
     "Capability", "DatasetBundle", "EAPEdge", "EAPObservation", "EAPResult",
     "EAPScore", "GenerationConfig", "Intervention", "MissingCapabilityError",
-    "ModelInput", "ModelRuntime", "Sample", "SplitPolicy", "TensorRef",
+    "ModelInput", "ModelRuntime", "SAECompatibilityError", "SAEFeatureRef",
+    "SAEManifest", "SAEReconstructionReport", "Sample", "SplitPolicy", "TensorRef",
     "TracePolicy", "__version__",
 ]

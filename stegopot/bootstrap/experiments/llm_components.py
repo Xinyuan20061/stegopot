@@ -7,7 +7,7 @@ from stegopot.infrastructure.llm.clients.chat_completions import ChatCompletions
 
 def definitions() -> tuple[ComponentDefinition, ...]:
   """返回 API 模型组件；只有构造实例时才注入单个授权凭证。"""
-  registry = Plugin("core", "2.0.0")
+  registry = Plugin("core", "2.1.0")
   schema = {
       "type": "object", "additionalProperties": False,
       "required": ["base_url", "model"],

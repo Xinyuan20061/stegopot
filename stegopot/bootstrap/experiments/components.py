@@ -130,6 +130,7 @@ class ComponentSession:
         "dataset": ("generate",), "transform": ("apply",),
         "validator": ("validate",), "analyzer": ("analyze",),
         "probe": ("fit", "predict", "score", "save", "close"),
+        "sae": ("encode", "decode", "reconstruct", "feature", "close"),
         "metric": ("evaluate",), "reporter": ("summarize", "report"),
         "agent": ("initial_state", "step"), "protocol": (),
         "intervention": (),

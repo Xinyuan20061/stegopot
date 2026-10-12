@@ -14,13 +14,15 @@
 - 通用 Sample 的生成、变换、验证、分组切分和指纹；
 - 从 ActivationTrace 构造 Probe 数据的接口；
 - 通用 EAP 评分、排序与可复用因果归因结果；
+- 公开 SAE 的加载、来源清单、重构评估与通用特征干预；
 - Dataset -> Scenario -> Analyze -> Evaluate -> Save 生命周期；
 - 多 Agent 通信、信息投影、StegoKit、检测、奖励和审计；
 - 插件注册、依赖注入、预检、能力匹配和资源关闭。
 
 下列内容必须由外部插件或用户配置实现：
 
-- EAP-IG、AtP、SAE、特定 Probe 训练器和非标准归因公式；
+- EAP-IG、AtP、SAE 训练、特定 Probe 训练器和非标准归因公式；
+- 任务特定的 SAE 特征发现、语义解释、筛选阈值和统计结论；
 - clean/corrupt、secret pair、单比特协议等实验语义；
 - 论文场景、数据内容、标签规则、指标与报告样式；
 - 特定模型架构的非通用 head/circuit 映射；
@@ -74,6 +76,15 @@ bootstrap -> application -> domain
   `activation_read`、`activation_write` 或 `gradient_read`。
 - capability 缺失必须在模型加载和实验执行前失败。
 - TensorRef 无法解析时显式失败，不猜测未知架构。
+
+## SAE 边界
+
+- 公开 SAE 的基础实现位于 `infrastructure/integrations/sae`，与 EAP、StegoKit 同级。
+- `SAEModel` 协议和 `SAEManifest` 值对象分别位于 `domain/interface` 与 `domain/model`。
+- `core.saelens` 只负责公开权重或本地权重的加载、兼容性核验和资源生命周期。
+- SAE 的 hook 名不得自动映射为 `TensorRef`；模型专用映射由实验插件显式声明。
+- 特征选择、标签解释、秘密条件、训练集划分、统计检验和报告由外部实验插件实现。
+- 特征干预默认可保留重构误差；正式实验仍必须设置纯重构和随机特征对照组。
 
 ## 数据与安全
 

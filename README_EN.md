@@ -11,10 +11,10 @@
 <p align="center"><strong>A controllable experimental substrate for LLM steganography and multi-agent research</strong></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0.0-2F81F7?style=flat-square" alt="Version 2.0.0">
+  <img src="https://img.shields.io/badge/version-2.1.0-2F81F7?style=flat-square" alt="Version 2.1.0">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/PyTorch-optional-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch optional">
-  <img src="https://img.shields.io/badge/plugin%20API-1.5-4B5563?style=flat-square" alt="Plugin API 1.5">
+  <img src="https://img.shields.io/badge/plugin%20API-1.6-4B5563?style=flat-square" alt="Plugin API 1.6">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-D22128?style=flat-square" alt="Apache-2.0 License"></a>
 </p>
 
@@ -33,6 +33,7 @@ and scenarios are supplied by configuration and independently installed plugins.
 | Basic interventions | Replace, Zero, Scale, Add, Interpolate, and conditional triggering |
 | Dataset pipeline | Source, transform, validate, grouped split, fingerprint, and store |
 | Probe boundary | Build per-layer datasets from ActivationTrace; algorithms stay in plugins |
+| Sparse features | Public SAE loading, compatibility manifests, reconstruction metrics, and feature interventions |
 | Research lifecycle | Dataset -> Scenario -> Analyze -> Evaluate -> Save |
 | Multi-agent runtime | Nodes, directed topology, channels, detectors, rewards, and sessions |
 | Model backends | Hugging Face white-box adapter and Chat Completions black-box client |
@@ -40,8 +41,9 @@ and scenarios are supplied by configuration and independently installed plugins.
 | Plugins | Strict schemas, decorator registration, dependency injection, capability preflight |
 | Reproducibility | Configuration, environment, plugins, outputs, tensor references, and SHA-256 seal |
 
-EAP, SAE, probe trainers, clean/corrupt pairs, one-bit protocols, paper scenarios, and bundled
-experiments are intentionally outside the core.
+SAE training, task-specific feature discovery and interpretation, EAP-IG, AtP, probe trainers,
+clean/corrupt pairs, one-bit protocols, paper scenarios, and bundled experiments are intentionally
+outside the core. The built-in SAE and EAP integrations provide reusable mechanisms only.
 
 ## Architecture
 
@@ -66,7 +68,8 @@ python -m venv .venv
 python -m pip install -e .
 ```
 
-Install `.[whitebox]` for Hugging Face internal-state access or `.[stego]` for StegoKit.
+Install `.[whitebox]` for Hugging Face internal-state access, `.[stego]` for StegoKit, or `.[sae]`
+for public SAE Lens weights.
 
 ## Controlled Model API
 
@@ -92,6 +95,30 @@ runtime.close()
 
 Gradient capture, interventions, and token-step generation are documented in
 [Runtime Kernel](docs/kernel.md).
+
+## Public SAE Resources
+
+`core.saelens` loads a public SAE Lens release or local weights behind the stable `SAEModel`
+interface. `SAEManifest` records provenance and can strictly validate the base model, hook name,
+input width, and feature width. Reconstruction diagnostics and generic `zero/set/scale/add`
+feature interventions are built in; feature discovery, semantic labeling, statistical tests, and
+paper-specific protocols remain experiment plugins.
+
+```yaml
+resources:
+  layer_sae:
+    type: core.saelens
+    config:
+      source: your-saelens-release
+      sae_id: your-sae-id
+      device: cuda
+      dtype: bfloat16
+      expected_model_id: your/model-id
+      expected_hook_name: your/hook-name
+      expected_input_width: 3584
+```
+
+See [SAE Integration](docs/sae.md) for the runtime contract and plugin example.
 
 ## Configuration
 
@@ -172,6 +199,7 @@ process.
 
 - [Architecture](docs/architecture.md)
 - [Runtime Kernel](docs/kernel.md)
+- [SAE Integration](docs/sae.md)
 - [Usage](docs/usage.md)
 - [Plugin Development](docs/plugin_development.md)
 - [Threat Model](docs/threat_model.md)
